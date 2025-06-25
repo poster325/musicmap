@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Music Map</title>
+    
+    <!-- Cytoscape.js -->
+    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+    
+    <!-- Cytoscape.js Layouts -->
+    <script src="https://unpkg.com/cytoscape-force@2.0.0/cytoscape-force.js"></script>
+    
+    <!-- Graph Constructor -->
+    <script src="graph-constructor.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow: hidden;
+        }
+
+        #header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #title {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        #controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        input, select, button {
+            padding: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        button {
+            background: #1DB954;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background: #1ed760;
+        }
+
+        #cy {
+            position: fixed;
+            top: 80px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: transparent;
+        }
+
+        #info-panel {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 10px;
+            max-width: 300px;
+            z-index: 1000;
+            display: none;
+        }
+
+        #stats {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            z-index: 1000;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 2000;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #1DB954;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div id="title">🎵 Interactive Music Map</div>
+        <div id="controls">
+            <div class="control-group">
+                <label>Min Edge Weight:</label>
+                <input type="number" id="minWeight" value="10" min="1" max="100">
+            </div>
+            <div class="control-group">
+                <label>Year Filter:</label>
+                <select id="yearFilter">
+                    <option value="">All Years</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Popularity Min:</label>
+                <input type="number" id="minPopularity" value="0" min="0" max="100">
+            </div>
+            <button onclick="buildGraph()">🔍 Build Graph</button>
+            <button onclick="exportGraph()">💾 Export</button>
+        </div>
+    </div>
+
+    <div id="cy"></div>
+
+    <div id="info-panel">
+        <h3 id="track-name"></h3>
+        <p id="track-artist"></p>
+        <p id="track-album"></p>
+        <p id="track-year"></p>
+        <p id="track-popularity"></p>
+        <div id="track-actions">
+            <button onclick="playPreview()">▶️ Preview</button>
+            <button onclick="openSpotify()">🎵 Open in Spotify</button>
+        </div>
+    </div>
+
+    <div id="stats">
+        <div>Nodes: <span id="node-count">0</span></div>
+        <div>Edges: <span id="edge-count">0</span></div>
+        <div>Selected: <span id="selected-count">0</span></div>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+        <div>Building music graph...</div>
+    </div>
+
+    <script>
+        let cy;
+        let graphConstructor;
+        let currentGraphData;
+        let selectedNode = null;
+
+        // Initialize the visualization
+        function initVisualization() {
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': 'data(color)',
+                            'width': 'data(size)',
+                            'height': 'data(size)',
+                            'label': 'data(name)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '80px',
+                            'font-size': '8px',
+                            'color': 'white',
+                            'text-outline-color': 'black',
+                            'text-outline-width': '2px',
+                            'border-color': 'white',
+                            'border-width': '1px',
+                            'border-opacity': '0.3'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 'data(thickness)',
+                            'line-color': 'rgba(255, 255, 255, 0.3)',
+                            'opacity': '0.6',
+                            'curve-style': 'bezier'
+                        }
+                    },
+                    {
+                        selector: 'node:selected',
+                        style: {
+                            'border-color': '#1DB954',
+                            'border-width': '3px',
+                            'border-opacity': '1'
+                        }
+                    },
+                    {
+                        selector: 'node:hover',
+                        style: {
+                            'border-color': '#1ed760',
+                            'border-width': '2px',
+                            'border-opacity': '1'
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'force',
+                    animate: true,
+                    animationDuration: 1000,
+                    fit: true,
+                    padding: 50,
+                    nodeDimensionsIncludeLabels: true,
+                    randomize: true
+                }
+            });
+
+            // Event listeners
+            cy.on('tap', 'node', function(evt) {
+                const node = evt.target;
+                showNodeInfo(node);
+            });
+
+            cy.on('tap', function(evt) {
+                if (evt.target === cy) {
+                    hideNodeInfo();
+                }
+            });
+
+            cy.on('mouseover', 'node', function(evt) {
+                const node = evt.target;
+                node.style('border-color', '#1ed760');
+                node.style('border-width', '2px');
+            });
+
+            cy.on('mouseout', 'node', function(evt) {
+                const node = evt.target;
+                if (!node.selected()) {
+                    node.style('border-color', 'white');
+                    node.style('border-width', '1px');
+                }
+            });
+
+            cy.on('select', 'node', function(evt) {
+                updateStats();
+            });
+
+            cy.on('unselect', 'node', function(evt) {
+                updateStats();
+            });
+        }
+
+        // Build the music graph
+        async function buildGraph() {
+            showLoading(true);
+            
+            try {
+                // Get user playlists from the server
+                const response = await fetch('/user-playlists?limit=50');
+                const playlistsData = await response.json();
+                
+                if (playlistsData.error) {
+                    throw new Error(playlistsData.error);
+                }
+
+                // Get detailed playlist data with tracks
+                const playlistsWithTracks = [];
+                for (const playlist of playlistsData.items.slice(0, 10)) { // Limit to first 10 playlists
+                    const tracksResponse = await fetch(`/playlist/${playlist.id}/tracks?limit=100`);
+                    const tracksData = await tracksResponse.json();
+                    
+                    if (!tracksData.error) {
+                        playlist.tracks = tracksData;
+                        playlistsWithTracks.push(playlist);
+                    }
+                }
+
+                // Build graph
+                graphConstructor = new MusicGraphConstructor();
+                graphConstructor.minEdgeWeight = parseInt(document.getElementById('minWeight').value);
+                
+                currentGraphData = graphConstructor.buildGraphFromPlaylists(playlistsWithTracks);
+                
+                // Load graph into Cytoscape
+                cy.elements().remove();
+                cy.add(currentGraphData.nodes);
+                cy.add(currentGraphData.edges);
+                
+                // Apply layout
+                cy.layout({
+                    name: 'force',
+                    animate: true,
+                    animationDuration: 1000,
+                    fit: true,
+                    padding: 50
+                }).run();
+
+                // Update stats
+                updateStats();
+                
+                // Populate year filter
+                populateYearFilter();
+                
+                console.log('✅ Graph built successfully!');
+                
+            } catch (error) {
+                console.error('❌ Error building graph:', error);
+                alert('Error building graph: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Show node information panel
+        function showNodeInfo(node) {
+            const data = node.data();
+            selectedNode = node;
+            
+            document.getElementById('track-name').textContent = data.name;
+            document.getElementById('track-artist').textContent = data.artist;
+            document.getElementById('track-album').textContent = data.album;
+            document.getElementById('track-year').textContent = `Released: ${data.releaseYear}`;
+            document.getElementById('track-popularity').textContent = `Popularity: ${data.popularity}/100`;
+            
+            document.getElementById('info-panel').style.display = 'block';
+        }
+
+        // Hide node information panel
+        function hideNodeInfo() {
+            document.getElementById('info-panel').style.display = 'none';
+            selectedNode = null;
+        }
+
+        // Play track preview
+        function playPreview() {
+            if (selectedNode && selectedNode.data('previewUrl')) {
+                const audio = new Audio(selectedNode.data('previewUrl'));
+                audio.play();
+            } else {
+                alert('No preview available for this track');
+            }
+        }
+
+        // Open track in Spotify
+        function openSpotify() {
+            if (selectedNode) {
+                window.open(selectedNode.data('spotifyUrl'), '_blank');
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const nodes = cy.nodes();
+            const edges = cy.edges();
+            const selected = cy.nodes(':selected');
+            
+            document.getElementById('node-count').textContent = nodes.length;
+            document.getElementById('edge-count').textContent = edges.length;
+            document.getElementById('selected-count').textContent = selected.length;
+        }
+
+        // Populate year filter dropdown
+        function populateYearFilter() {
+            const yearFilter = document.getElementById('yearFilter');
+            yearFilter.innerHTML = '<option value="">All Years</option>';
+            
+            const years = new Set();
+            cy.nodes().forEach(node => {
+                years.add(node.data('releaseYear'));
+            });
+            
+            Array.from(years).sort().forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                yearFilter.appendChild(option);
+            });
+        }
+
+        // Apply filters
+        function applyFilters() {
+            const yearFilter = document.getElementById('yearFilter').value;
+            const minPopularity = parseInt(document.getElementById('minPopularity').value);
+            
+            cy.nodes().forEach(node => {
+                const data = node.data();
+                let visible = true;
+                
+                if (yearFilter && data.releaseYear != yearFilter) {
+                    visible = false;
+                }
+                
+                if (data.popularity < minPopularity) {
+                    visible = false;
+                }
+                
+                node.style('display', visible ? 'element' : 'none');
+            });
+            
+            updateStats();
+        }
+
+        // Export graph data
+        function exportGraph() {
+            if (graphConstructor) {
+                graphConstructor.exportToJSON('music-map-graph.json');
+            }
+        }
+
+        // Show/hide loading indicator
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initVisualization();
+            
+            // Add filter event listeners
+            document.getElementById('yearFilter').addEventListener('change', applyFilters);
+            document.getElementById('minPopularity').addEventListener('input', applyFilters);
+        });
+    </script>
+</body>
+</html> 

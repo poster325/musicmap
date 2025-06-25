@@ -23,6 +23,8 @@
             border-radius: 20px;
             backdrop-filter: blur(10px);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 90%;
         }
         h1 {
             font-size: 3rem;
@@ -39,6 +41,107 @@
             padding: 1rem;
             border-radius: 10px;
             font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .button-row {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            flex: 1;
+            min-width: 120px;
+        }
+        .login-btn {
+            background: #1DB954;
+            color: white;
+        }
+        .login-btn:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
+        }
+        .refresh-btn {
+            background: #ff6b35;
+            color: white;
+        }
+        .refresh-btn:hover {
+            background: #ff7f50;
+            transform: translateY(-2px);
+        }
+        .test-btn {
+            background: #4a90e2;
+            color: white;
+        }
+        .test-btn:hover {
+            background: #5ba0f2;
+            transform: translateY(-2px);
+        }
+        .data-btn {
+            background: #9c27b0;
+            color: white;
+        }
+        .data-btn:hover {
+            background: #ba68c8;
+            transform: translateY(-2px);
+        }
+        .token-display {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+            font-family: monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .data-display {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-top: 1rem;
+            font-family: monospace;
+            font-size: 0.8rem;
+            max-height: 300px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .hidden {
+            display: none;
+        }
+        .success {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid #4CAF50;
+        }
+        .error {
+            background: rgba(244, 67, 54, 0.3);
+            border: 1px solid #f44336;
+        }
+        .input-group {
+            margin: 1rem 0;
+        }
+        input {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            margin: 0 5px;
+            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -46,9 +149,249 @@
     <div class="container">
         <h1>🎵 Music Map</h1>
         <p>Your music discovery journey starts here</p>
-        <div class="status">
+        
+        <div id="status" class="status">
             🚀 Ready for development!
         </div>
+        
+        <div class="button-group">
+            <button id="loginBtn" class="login-btn" onclick="loginToSpotify()">
+                🔐 Login with Spotify
+            </button>
+            
+            <div class="button-row">
+                <button id="refreshBtn" class="refresh-btn hidden" onclick="refreshToken()">
+                    🔄 Refresh Token
+                </button>
+                
+                <button id="testBtn" class="test-btn hidden" onclick="testSpotifyAPI()">
+                    🎵 Test API
+                </button>
+            </div>
+            
+            <div class="button-row">
+                <button id="playlistsBtn" class="data-btn hidden" onclick="getUserPlaylists()">
+                    📋 My Playlists
+                </button>
+                
+                <button id="topTracksBtn" class="data-btn hidden" onclick="getTopTracks()">
+                    🏆 Top Tracks
+                </button>
+            </div>
+            
+            <div class="button-row">
+                <button id="genresBtn" class="data-btn hidden" onclick="getGenres()">
+                    🎼 Genres
+                </button>
+                
+                <button id="playlistBtn" class="data-btn hidden" onclick="getPlaylistDetails()">
+                    📝 Playlist Details
+                </button>
+            </div>
+            
+            <div class="button-row">
+                <button id="visualizationBtn" class="data-btn hidden" onclick="openVisualization()">
+                    🗺️ Music Map
+                </button>
+            </div>
+            
+            <div class="input-group hidden" id="playlistInput">
+                <input type="text" id="playlistId" placeholder="Enter Playlist ID" />
+                <button onclick="getPlaylistDetails()">Get Details</button>
+            </div>
+        </div>
+        
+        <div id="tokenDisplay" class="token-display hidden"></div>
+        <div id="dataDisplay" class="data-display hidden"></div>
     </div>
+
+    <script>
+        let currentToken = null;
+
+        // Check URL parameters for auth success/error
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('success') === 'true') {
+            updateStatus('✅ Successfully authenticated with Spotify!', 'success');
+            showAuthenticatedButtons();
+        } else if (urlParams.get('error')) {
+            updateStatus('❌ Authentication failed: ' + urlParams.get('error'), 'error');
+        }
+
+        function updateStatus(message, type = '') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+
+        function showAuthenticatedButtons() {
+            document.getElementById('refreshBtn').classList.remove('hidden');
+            document.getElementById('testBtn').classList.remove('hidden');
+            document.getElementById('playlistsBtn').classList.remove('hidden');
+            document.getElementById('topTracksBtn').classList.remove('hidden');
+            document.getElementById('genresBtn').classList.remove('hidden');
+            document.getElementById('playlistBtn').classList.remove('hidden');
+            document.getElementById('playlistInput').classList.remove('hidden');
+            document.getElementById('visualizationBtn').classList.remove('hidden');
+            document.getElementById('loginBtn').textContent = '🔐 Re-authenticate';
+        }
+
+        function showToken(token) {
+            const tokenDisplay = document.getElementById('tokenDisplay');
+            tokenDisplay.textContent = 'Access Token: ' + token.substring(0, 50) + '...';
+            tokenDisplay.classList.remove('hidden');
+        }
+
+        function showData(data, title) {
+            const dataDisplay = document.getElementById('dataDisplay');
+            dataDisplay.innerHTML = `<strong>${title}:</strong><br>${JSON.stringify(data, null, 2)}`;
+            dataDisplay.classList.remove('hidden');
+        }
+
+        async function loginToSpotify() {
+            try {
+                updateStatus('🔄 Redirecting to Spotify...');
+                const response = await fetch('/auth/spotify');
+                const data = await response.json();
+                window.location.href = data.authUrl;
+            } catch (error) {
+                updateStatus('❌ Failed to initiate login: ' + error.message, 'error');
+            }
+        }
+
+        async function refreshToken() {
+            try {
+                updateStatus('🔄 Refreshing token...');
+                const response = await fetch('/refresh-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentToken = data.access_token;
+                    updateStatus('✅ Token refreshed successfully!', 'success');
+                    showToken(currentToken);
+                } else {
+                    updateStatus('❌ Failed to refresh token: ' + data.error, 'error');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to refresh token: ' + error.message, 'error');
+            }
+        }
+
+        async function testSpotifyAPI() {
+            try {
+                updateStatus('🔄 Testing Spotify API...');
+                const response = await fetch('/test-spotify');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ API test failed: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ API test successful! Welcome, ' + data.display_name, 'success');
+                    showData(data, 'User Profile');
+                }
+            } catch (error) {
+                updateStatus('❌ API test failed: ' + error.message, 'error');
+            }
+        }
+
+        async function getUserPlaylists() {
+            try {
+                updateStatus('🔄 Fetching your playlists...');
+                const response = await fetch('/user-playlists?limit=10');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch playlists: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.items.length + ' playlists!', 'success');
+                    showData(data, 'User Playlists');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch playlists: ' + error.message, 'error');
+            }
+        }
+
+        async function getTopTracks() {
+            try {
+                updateStatus('🔄 Fetching your top tracks...');
+                const response = await fetch('/user-top-tracks?limit=10&time_range=medium_term');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch top tracks: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.items.length + ' top tracks!', 'success');
+                    showData(data, 'Top Tracks');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch top tracks: ' + error.message, 'error');
+            }
+        }
+
+        async function getGenres() {
+            try {
+                updateStatus('🔄 Fetching available genres...');
+                const response = await fetch('/genres');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch genres: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.genres.length + ' genres!', 'success');
+                    showData(data, 'Available Genres');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch genres: ' + error.message, 'error');
+            }
+        }
+
+        async function getPlaylistDetails() {
+            const playlistId = document.getElementById('playlistId').value.trim();
+            if (!playlistId) {
+                updateStatus('❌ Please enter a playlist ID', 'error');
+                return;
+            }
+
+            try {
+                updateStatus('🔄 Fetching playlist details...');
+                const response = await fetch(`/playlist/${playlistId}?fields=name,description,tracks.total,owner.display_name`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch playlist: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Playlist: ' + data.name + ' (' + data.tracks.total + ' tracks)', 'success');
+                    showData(data, 'Playlist Details');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch playlist: ' + error.message, 'error');
+            }
+        }
+
+        function openVisualization() {
+            window.open('/visualization', '_blank');
+        }
+
+        // Check if we already have a token on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/access-token');
+                if (response.ok) {
+                    const data = await response.json();
+                    currentToken = data.access_token;
+                    showAuthenticatedButtons();
+                    showToken(currentToken);
+                    updateStatus('✅ Already authenticated with Spotify!', 'success');
+                }
+            } catch (error) {
+                // No token available, which is fine
+            }
+        });
+    </script>
 </body>
 </html> 
