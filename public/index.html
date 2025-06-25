@@ -251,6 +251,8 @@
         </div>
         <button onclick="applyFilters()">🔍 Apply</button>
         <button onclick="resetView()">🏠 Reset</button>
+        <input type="file" id="mapUpload" accept="application/json" style="display:none" onchange="uploadMapFile(event)">
+        <button onclick="document.getElementById('mapUpload').click()">⬆️ Upload Map JSON</button>
     </div>
 
     <!-- Terminal-like status bar -->
@@ -469,6 +471,26 @@
             // Apply random layout
             cy.layout({ name: 'random', animate: true, fit: true }).run();
             setTerminalStatus('Ready.');
+        }
+        
+        // Upload map file
+        async function uploadMapFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            setTerminalStatus('Uploading map JSON...');
+            const formData = new FormData();
+            formData.append('map', file);
+            try {
+                const res = await fetch('/api/upload-map', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!res.ok) throw new Error('Upload failed');
+                setTerminalStatus('Map uploaded! Reloading...');
+                setTimeout(() => location.reload(), 1000);
+            } catch (err) {
+                setTerminalStatus('Upload failed: ' + err.message, 'error');
+            }
         }
         
         // Load map when page loads

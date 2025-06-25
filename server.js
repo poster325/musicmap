@@ -2,9 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
+const path = require('path');
 
 // Import map generation functions
 const { fetchAndSaveDataset, buildGraphFromDataset } = require('./generate-map.js');
+
+// Add multer for file uploads
+const multer = require('multer');
+const upload = multer({ dest: 'tmp/' });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -435,6 +440,20 @@ app.get('/track/:trackId/features', async (req, res) => {
     } catch (error) {
         console.error('Track features API error:', error.response?.data || error.message);
         res.status(500).json({ error: 'Failed to fetch track features' });
+    }
+});
+
+// Upload map JSON endpoint
+app.post('/api/upload-map', upload.single('map'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+        const fs = require('fs').promises;
+        const destPath = path.join(__dirname, 'public', 'artist-map.json');
+        await fs.copyFile(req.file.path, destPath);
+        await fs.unlink(req.file.path);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
