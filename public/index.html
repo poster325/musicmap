@@ -175,6 +175,28 @@
             z-index: 2000;
             display: none;
         }
+        
+        #terminal-status {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #181818;
+            color: #39ff14;
+            font-family: "Fira Mono", "Consolas", monospace;
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+            z-index: 2001;
+            border-top: 1px solid #222;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+            letter-spacing: 0.5px;
+            opacity: 0.97;
+            user-select: none;
+        }
+        #terminal-status.error {
+            color: #ff5252;
+            background: #2d0000;
+        }
     </style>
 </head>
 <body>
@@ -219,19 +241,33 @@
         <div class="control-group">
             <label>Layout:</label>
             <select id="layout">
-                <option value="force">Force</option>
-                <option value="cose">CoSE</option>
-                <option value="circle">Circle</option>
+                <option value="random">Random</option>
                 <option value="grid">Grid</option>
+                <option value="circle">Circle</option>
+                <option value="concentric">Concentric</option>
+                <option value="breadthfirst">Breadth First</option>
+                <option value="cose">CoSE</option>
             </select>
         </div>
         <button onclick="applyFilters()">🔍 Apply</button>
         <button onclick="resetView()">🏠 Reset</button>
     </div>
 
+    <!-- Terminal-like status bar -->
+    <div id="terminal-status">
+        <span id="terminal-message">Ready.</span>
+    </div>
+
     <script>
         let cy;
         let originalGraphData;
+        
+        // Terminal status update function
+        function setTerminalStatus(msg, type = '') {
+            const el = document.getElementById('terminal-message');
+            el.textContent = msg;
+            el.className = type;
+        }
         
         // Initialize Cytoscape
         cy = cytoscape({
@@ -281,7 +317,7 @@
                 }
             ],
             layout: {
-                name: 'force',
+                name: 'random',
                 animate: true,
                 animationDuration: 1000,
                 fit: true,
@@ -292,6 +328,7 @@
         // Load the pre-generated map
         async function loadArtistMap() {
             try {
+                setTerminalStatus('Fetching artist map data...');
                 const response = await fetch('artist-map.json');
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -314,12 +351,20 @@
                 // Hide loading
                 document.getElementById('loading').style.display = 'none';
                 
-                // Run layout
-                cy.layout({ name: 'force', animate: true }).run();
+                // Run layout with error handling
+                setTerminalStatus('Building graph layout...');
+                try {
+                    cy.layout({ name: 'random', animate: true }).run();
+                } catch (layoutError) {
+                    setTerminalStatus('Layout failed, using random layout.', 'error');
+                    cy.layout({ name: 'random', animate: true, fit: true }).run();
+                }
+                setTerminalStatus('Ready.');
                 
                 console.log('✅ Artist map loaded successfully!');
                 
             } catch (error) {
+                setTerminalStatus('❌ Failed to load artist map: ' + error.message, 'error');
                 console.error('❌ Failed to load artist map:', error);
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error').style.display = 'block';
@@ -379,6 +424,7 @@
         
         // Apply filters
         function applyFilters() {
+            setTerminalStatus('Applying filters and layout...');
             const minWeight = parseInt(document.getElementById('minWeight').value);
             const layout = document.getElementById('layout').value;
             
@@ -401,36 +447,32 @@
             });
             
             // Apply layout
-            cy.layout({ name: layout, animate: true, fit: true }).run();
+            try {
+                cy.layout({ name: layout, animate: true, fit: true }).run();
+                setTerminalStatus('Ready.');
+            } catch (layoutError) {
+                setTerminalStatus('Layout failed, using random layout.', 'error');
+                cy.layout({ name: 'random', animate: true, fit: true }).run();
+            }
         }
         
         // Reset view
         function resetView() {
+            setTerminalStatus('Resetting view...');
+            // Show all elements
             cy.elements().show();
-            cy.layout({ name: 'force', animate: true, fit: true }).run();
-            document.getElementById('minWeight').value = 3;
-            document.getElementById('layout').value = 'force';
+            
+            // Reset filters
+            document.getElementById('minWeight').value = '3';
+            document.getElementById('layout').value = 'random';
+            
+            // Apply random layout
+            cy.layout({ name: 'random', animate: true, fit: true }).run();
+            setTerminalStatus('Ready.');
         }
         
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(event) {
-            switch(event.key) {
-                case 'r':
-                case 'R':
-                    resetView();
-                    break;
-                case 'f':
-                case 'F':
-                    applyFilters();
-                    break;
-                case 'Escape':
-                    cy.elements().unselect();
-                    break;
-            }
-        });
-        
-        // Load the map when page loads
-        window.addEventListener('load', loadArtistMap);
+        // Load map when page loads
+        document.addEventListener('DOMContentLoaded', loadArtistMap);
     </script>
 </body>
 </html> 
