@@ -8,10 +8,48 @@
     <!-- Cytoscape.js -->
     <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
     
-    <!-- Cytoscape.js Layouts -->
-    <script src="https://unpkg.com/cytoscape-force@2.0.0/cytoscape-force.js"></script>
-    <script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
-    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <!-- Cytoscape.js Layouts - Load with proper error handling -->
+    <script>
+        // Load layout plugins with error handling
+        function loadLayoutPlugin(url, name) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = () => {
+                    console.log(`✅ Loaded ${name} layout plugin`);
+                    resolve();
+                };
+                script.onerror = () => {
+                    console.warn(`⚠️ Failed to load ${name} layout plugin`);
+                    resolve(); // Don't reject, just continue
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // Load all layout plugins
+        Promise.all([
+            loadLayoutPlugin('https://unpkg.com/cytoscape-force@2.0.0/cytoscape-force.js', 'Force'),
+            loadLayoutPlugin('https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js', 'Cose-Bilkent'),
+            loadLayoutPlugin('https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js', 'Dagre')
+        ]).then(() => {
+            // Register plugins after they're loaded
+            if (typeof cytoscape !== 'undefined') {
+                if (typeof cytoscapeForce !== 'undefined') {
+                    cytoscape.use(cytoscapeForce);
+                    console.log('✅ Registered Force layout');
+                }
+                if (typeof cytoscapeCoseBilkent !== 'undefined') {
+                    cytoscape.use(cytoscapeCoseBilkent);
+                    console.log('✅ Registered Cose-Bilkent layout');
+                }
+                if (typeof cytoscapeDagre !== 'undefined') {
+                    cytoscape.use(cytoscapeDagre);
+                    console.log('✅ Registered Dagre layout');
+                }
+            }
+        });
+    </script>
     
     <!-- Graph Constructor -->
     <script src="artist-graph-constructor.js"></script>
@@ -154,11 +192,12 @@
             <div class="control-group">
                 <label>Layout:</label>
                 <select id="layoutType">
-                    <option value="force">Force-Directed</option>
-                    <option value="cose-bilkent">Cose-Bilkent</option>
-                    <option value="dagre">Hierarchical</option>
                     <option value="random">Random</option>
                     <option value="grid">Grid</option>
+                    <option value="circle">Circle</option>
+                    <option value="concentric">Concentric</option>
+                    <option value="breadthfirst">Breadth First</option>
+                    <option value="cose">Cose</option>
                 </select>
             </div>
             <div class="control-group">
@@ -206,19 +245,6 @@
     </div>
 
     <script>
-        // Register Cytoscape.js extensions
-        if (typeof cytoscape !== 'undefined') {
-            if (typeof cytoscapeForce !== 'undefined') {
-                cytoscape.use(cytoscapeForce);
-            }
-            if (typeof cytoscapeCoseBilkent !== 'undefined') {
-                cytoscape.use(cytoscapeCoseBilkent);
-            }
-            if (typeof cytoscapeDagre !== 'undefined') {
-                cytoscape.use(cytoscapeDagre);
-            }
-        }
-
         let cy;
         let graphConstructor;
         let currentGraphData;
@@ -226,7 +252,7 @@
 
         // Initialize the visualization
         function initVisualization() {
-            // Wait for Cytoscape to be available and extensions to be loaded
+            // Wait for Cytoscape to be available
             setTimeout(() => {
                 cy = cytoscape({
                     container: document.getElementById('cy'),
@@ -350,7 +376,7 @@
                         targetNode.style('border-color', 'white');
                     }
                 });
-            }, 100);
+            }, 500); // Increased timeout to ensure plugins are loaded
         }
 
         // Get layout configuration based on selected type
@@ -366,19 +392,47 @@
             };
 
             switch (layoutType) {
-                case 'force':
+                case 'random':
                     return {
                         ...baseConfig,
-                        name: 'force',
-                        randomize: true,
-                        maxIterations: 1000,
-                        gravity: 0.1,
-                        scaling: 1.1
+                        name: 'random'
                     };
-                case 'cose-bilkent':
+                case 'grid':
                     return {
                         ...baseConfig,
-                        name: 'cose-bilkent',
+                        name: 'grid',
+                        cols: 10,
+                        rows: 10
+                    };
+                case 'circle':
+                    return {
+                        ...baseConfig,
+                        name: 'circle',
+                        radius: 200
+                    };
+                case 'concentric':
+                    return {
+                        ...baseConfig,
+                        name: 'concentric',
+                        concentric: function(node) {
+                            return node.degree();
+                        },
+                        levelWidth: function(nodes) {
+                            return 2;
+                        }
+                    };
+                case 'breadthfirst':
+                    return {
+                        ...baseConfig,
+                        name: 'breadthfirst',
+                        directed: true,
+                        roots: undefined,
+                        maximalAdjustments: 0
+                    };
+                case 'cose':
+                    return {
+                        ...baseConfig,
+                        name: 'cose',
                         nodeDimensionsIncludeLabels: true,
                         fit: true,
                         padding: 30,
@@ -394,26 +448,6 @@
                         initialTemp: 200,
                         coolingFactor: 0.95,
                         minTemp: 1.0
-                    };
-                case 'dagre':
-                    return {
-                        ...baseConfig,
-                        name: 'dagre',
-                        rankDir: 'TB',
-                        rankSep: 50,
-                        nodeSep: 20
-                    };
-                case 'random':
-                    return {
-                        ...baseConfig,
-                        name: 'random'
-                    };
-                case 'grid':
-                    return {
-                        ...baseConfig,
-                        name: 'grid',
-                        cols: 10,
-                        rows: 10
                     };
                 default:
                     return {
@@ -497,9 +531,20 @@
                 cy.add(currentGraphData.nodes);
                 cy.add(currentGraphData.edges);
                 
-                // Apply selected layout
-                const layoutConfig = getLayoutConfig();
-                cy.layout(layoutConfig).run();
+                // Apply selected layout with error handling
+                try {
+                    const layoutConfig = getLayoutConfig();
+                    cy.layout(layoutConfig).run();
+                } catch (layoutError) {
+                    console.warn('Layout failed, using random layout:', layoutError);
+                    cy.layout({
+                        name: 'random',
+                        animate: true,
+                        animationDuration: 1000,
+                        fit: true,
+                        padding: 50
+                    }).run();
+                }
 
                 // Update stats
                 updateStats();
