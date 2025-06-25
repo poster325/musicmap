@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 Artist Ecosystem Map</title>
+    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow: hidden;
+        }
+        
+        #header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #title {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        #stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #1ed760;
+        }
+        
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 2000;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #1ed760;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #cy {
+            width: 100vw;
+            height: 100vh;
+            background: transparent;
+        }
+        
+        #tooltip {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            max-width: 300px;
+            z-index: 1001;
+            display: none;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .tooltip-header {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #1ed760;
+        }
+        
+        .tooltip-content {
+            line-height: 1.4;
+        }
+        
+        .tooltip-footer {
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .tooltip-footer a {
+            color: #1ed760;
+            text-decoration: none;
+        }
+        
+        .tooltip-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 1rem;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+        }
+        
+        .control-group {
+            margin-bottom: 1rem;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        input, select {
+            padding: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            width: 100px;
+        }
+        
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 5px;
+            background: #1ed760;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 0.25rem;
+        }
+        
+        button:hover {
+            background: #1fdf64;
+        }
+        
+        #error {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(244, 67, 54, 0.9);
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 2000;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div id="title">🎤 Artist Ecosystem Map</div>
+        <div id="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="artistCount">-</div>
+                <div>Artists</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="connectionCount">-</div>
+                <div>Connections</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="lastUpdated">-</div>
+                <div>Last Updated</div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading Artist Ecosystem Map...</div>
+    </div>
+    
+    <div id="error">
+        <h3>❌ Error Loading Map</h3>
+        <p id="errorMessage">Failed to load the artist map.</p>
+        <button onclick="location.reload()">🔄 Retry</button>
+    </div>
+    
+    <div id="cy"></div>
+    
+    <div id="tooltip"></div>
+    
+    <div id="controls">
+        <div class="control-group">
+            <label>Min Weight:</label>
+            <input type="number" id="minWeight" value="3" min="1" max="20">
+        </div>
+        <div class="control-group">
+            <label>Layout:</label>
+            <select id="layout">
+                <option value="force">Force</option>
+                <option value="cose">CoSE</option>
+                <option value="circle">Circle</option>
+                <option value="grid">Grid</option>
+            </select>
+        </div>
+        <button onclick="applyFilters()">🔍 Apply</button>
+        <button onclick="resetView()">🏠 Reset</button>
+    </div>
+
+    <script>
+        let cy;
+        let originalGraphData;
+        
+        // Initialize Cytoscape
+        cy = cytoscape({
+            container: document.getElementById('cy'),
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': 'data(color)',
+                        'width': 'data(size)',
+                        'height': 'data(size)',
+                        'label': 'data(name)',
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'text-wrap': 'wrap',
+                        'text-max-width': '80px',
+                        'font-size': '8px',
+                        'font-weight': 'bold',
+                        'text-outline-color': '#000',
+                        'text-outline-width': '2px',
+                        'border-color': '#fff',
+                        'border-width': '1px'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 'data(thickness)',
+                        'line-color': '#ccc',
+                        'opacity': 0.6,
+                        'curve-style': 'bezier'
+                    }
+                },
+                {
+                    selector: 'node:selected',
+                    style: {
+                        'border-color': '#1ed760',
+                        'border-width': '3px'
+                    }
+                },
+                {
+                    selector: 'edge:selected',
+                    style: {
+                        'line-color': '#1ed760',
+                        'opacity': 1
+                    }
+                }
+            ],
+            layout: {
+                name: 'force',
+                animate: true,
+                animationDuration: 1000,
+                fit: true,
+                padding: 50
+            }
+        });
+        
+        // Load the pre-generated map
+        async function loadArtistMap() {
+            try {
+                const response = await fetch('artist-map.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const mapData = await response.json();
+                originalGraphData = mapData.graph;
+                
+                // Add nodes and edges to the graph
+                cy.add(mapData.graph.nodes);
+                cy.add(mapData.graph.edges);
+                
+                // Update stats
+                document.getElementById('artistCount').textContent = mapData.graph.nodes.length;
+                document.getElementById('connectionCount').textContent = mapData.graph.edges.length;
+                
+                const lastUpdated = new Date(mapData.metadata.generatedAt).toLocaleDateString();
+                document.getElementById('lastUpdated').textContent = lastUpdated;
+                
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
+                
+                // Run layout
+                cy.layout({ name: 'force', animate: true }).run();
+                
+                console.log('✅ Artist map loaded successfully!');
+                
+            } catch (error) {
+                console.error('❌ Failed to load artist map:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('errorMessage').textContent = error.message;
+            }
+        }
+        
+        // Node tooltip
+        cy.on('mouseover', 'node', function(event) {
+            const node = event.target;
+            const data = node.data();
+            
+            const tooltip = document.getElementById('tooltip');
+            tooltip.innerHTML = `
+                <div class="tooltip-header">🎤 ${data.name}</div>
+                <div class="tooltip-content">
+                    <div><strong>Track Count:</strong> ${data.trackCount}</div>
+                    <div><strong>Avg Popularity:</strong> ${data.avgPopularity}/100</div>
+                    <div><strong>Avg Release Year:</strong> ${data.avgReleaseYear}</div>
+                    <div><strong>Connections:</strong> ${node.connectedEdges().length}</div>
+                </div>
+            `;
+            
+            tooltip.style.display = 'block';
+        });
+        
+        // Edge tooltip
+        cy.on('mouseover', 'edge', function(event) {
+            const edge = event.target;
+            const data = edge.data();
+            const sourceNode = cy.getElementById(data.source);
+            const targetNode = cy.getElementById(data.target);
+            
+            const tooltip = document.getElementById('tooltip');
+            tooltip.innerHTML = `
+                <div class="tooltip-header">🔗 Artist Connection</div>
+                <div class="tooltip-content">
+                    <div><strong>${sourceNode.data('name')}</strong> ↔ <strong>${targetNode.data('name')}</strong></div>
+                    <div><strong>Co-occurrences:</strong> ${data.weight}</div>
+                </div>
+            `;
+            
+            tooltip.style.display = 'block';
+        });
+        
+        // Hide tooltip on mouseout
+        cy.on('mouseout', 'node, edge', function() {
+            document.getElementById('tooltip').style.display = 'none';
+        });
+        
+        // Move tooltip with mouse
+        cy.on('mousemove', 'node, edge', function(event) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.style.left = (event.renderedPosition.x + 10) + 'px';
+            tooltip.style.top = (event.renderedPosition.y - 10) + 'px';
+        });
+        
+        // Apply filters
+        function applyFilters() {
+            const minWeight = parseInt(document.getElementById('minWeight').value);
+            const layout = document.getElementById('layout').value;
+            
+            // Filter edges by weight
+            cy.edges().forEach(edge => {
+                if (edge.data('weight') >= minWeight) {
+                    edge.show();
+                } else {
+                    edge.hide();
+                }
+            });
+            
+            // Show only connected nodes
+            cy.nodes().forEach(node => {
+                if (node.connectedEdges(':visible').length > 0) {
+                    node.show();
+                } else {
+                    node.hide();
+                }
+            });
+            
+            // Apply layout
+            cy.layout({ name: layout, animate: true, fit: true }).run();
+        }
+        
+        // Reset view
+        function resetView() {
+            cy.elements().show();
+            cy.layout({ name: 'force', animate: true, fit: true }).run();
+            document.getElementById('minWeight').value = 3;
+            document.getElementById('layout').value = 'force';
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            switch(event.key) {
+                case 'r':
+                case 'R':
+                    resetView();
+                    break;
+                case 'f':
+                case 'F':
+                    applyFilters();
+                    break;
+                case 'Escape':
+                    cy.elements().unselect();
+                    break;
+            }
+        });
+        
+        // Load the map when page loads
+        window.addEventListener('load', loadArtistMap);
+    </script>
+</body>
+</html> 

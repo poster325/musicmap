@@ -3,6 +3,9 @@ const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 
+// Import map generation functions
+const { fetchAndSaveDataset, buildGraphFromDataset } = require('./generate-map.js');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -55,6 +58,112 @@ app.get('/', (req, res) => {
 
 app.get('/visualization', (req, res) => {
     res.sendFile(__dirname + '/music-map-visualization.html');
+});
+
+// New endpoint to fetch and save dataset
+app.post('/api/fetch-dataset', async (req, res) => {
+    try {
+        console.log('🔄 Starting dataset fetch from web interface...');
+        
+        if (!SPOTIFY_CLIENT_SECRET) {
+            return res.status(500).json({ error: 'SPOTIFY_CLIENT_SECRET not configured' });
+        }
+        
+        const datasetPath = await fetchAndSaveDataset();
+        
+        res.json({ 
+            success: true, 
+            message: 'Dataset fetched and saved successfully',
+            datasetPath: datasetPath
+        });
+    } catch (error) {
+        console.error('❌ Dataset fetch failed:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// New endpoint to build map from dataset
+app.post('/api/build-map', async (req, res) => {
+    try {
+        const { datasetPath } = req.body;
+        
+        if (!datasetPath) {
+            return res.status(400).json({ error: 'Dataset path is required' });
+        }
+        
+        console.log('🔄 Building map from dataset:', datasetPath);
+        
+        await buildGraphFromDataset(datasetPath);
+        
+        res.json({ 
+            success: true, 
+            message: 'Map built successfully',
+            mapFile: datasetPath.replace('dataset/playlists-', 'public/artist-map-').replace('.jsonl', '.json')
+        });
+    } catch (error) {
+        console.error('❌ Map build failed:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// New endpoint to list available datasets
+app.get('/api/datasets', async (req, res) => {
+    try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        
+        const datasetDir = path.join(__dirname, 'dataset');
+        
+        try {
+            const files = await fs.readdir(datasetDir);
+            const datasets = files
+                .filter(file => file.startsWith('playlists-') && file.endsWith('.jsonl'))
+                .map(file => ({
+                    name: file,
+                    path: `dataset/${file}`,
+                    date: file.replace('playlists-', '').replace('.jsonl', ''),
+                    size: fs.stat(path.join(datasetDir, file)).then(stats => stats.size)
+                }));
+            
+            res.json({ datasets });
+        } catch (error) {
+            // Dataset directory doesn't exist
+            res.json({ datasets: [] });
+        }
+    } catch (error) {
+        console.error('❌ Failed to list datasets:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// New endpoint to list available maps
+app.get('/api/maps', async (req, res) => {
+    try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        
+        const publicDir = path.join(__dirname, 'public');
+        
+        try {
+            const files = await fs.readdir(publicDir);
+            const maps = files
+                .filter(file => file.startsWith('artist-map-') && file.endsWith('.json'))
+                .map(file => ({
+                    name: file,
+                    path: `public/${file}`,
+                    date: file.replace('artist-map-', '').replace('.json', ''),
+                    url: `/public/${file}`
+                }));
+            
+            res.json({ maps });
+        } catch (error) {
+            // Public directory doesn't exist
+            res.json({ maps: [] });
+        }
+    } catch (error) {
+        console.error('❌ Failed to list maps:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Test Spotify API connection

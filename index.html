@@ -23,7 +23,7 @@
             border-radius: 20px;
             backdrop-filter: blur(10px);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            max-width: 600px;
+            max-width: 800px;
             width: 90%;
         }
         h1 {
@@ -94,6 +94,22 @@
             background: #1ed760;
             transform: translateY(-2px);
         }
+        .dataset-btn {
+            background: #ff6b35;
+            color: white;
+        }
+        .dataset-btn:hover {
+            background: #ff7f50;
+            transform: translateY(-2px);
+        }
+        .build-btn {
+            background: #4CAF50;
+            color: white;
+        }
+        .build-btn:hover {
+            background: #66BB6A;
+            transform: translateY(-2px);
+        }
         .data-display {
             background: rgba(0, 0, 0, 0.3);
             padding: 1rem;
@@ -125,6 +141,44 @@
             border-radius: 5px;
             margin: 0 5px;
             font-size: 0.9rem;
+        }
+        .section {
+            margin: 2rem 0;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #1ed760;
+        }
+        .dataset-list, .map-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 1rem 0;
+        }
+        .dataset-item, .map-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        .dataset-item:hover, .map-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #1ed760;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -184,10 +238,45 @@
             </div>
         </div>
         
+        <!-- Dataset Management Section -->
+        <div class="section">
+            <h3>📊 Dataset Management</h3>
+            <div class="button-row">
+                <button id="fetchDatasetBtn" class="dataset-btn" onclick="fetchDataset()">
+                    📥 Fetch Current Dataset
+                </button>
+                
+                <button id="listDatasetsBtn" class="dataset-btn" onclick="listDatasets()">
+                    📋 List Datasets
+                </button>
+            </div>
+            
+            <div id="datasetsList" class="dataset-list hidden"></div>
+        </div>
+        
+        <!-- Map Building Section -->
+        <div class="section">
+            <h3>🗺️ Map Building</h3>
+            <div class="button-row">
+                <button id="buildMapBtn" class="build-btn" onclick="buildMap()">
+                    🔨 Build Map from Dataset
+                </button>
+                
+                <button id="listMapsBtn" class="build-btn" onclick="listMaps()">
+                    📋 List Maps
+                </button>
+            </div>
+            
+            <div id="mapsList" class="map-list hidden"></div>
+        </div>
+        
         <div id="dataDisplay" class="data-display hidden"></div>
     </div>
 
     <script>
+        let currentDataset = null;
+        let currentMap = null;
+
         function updateStatus(message, type = '') {
             const statusEl = document.getElementById('status');
             statusEl.textContent = message;
@@ -199,6 +288,25 @@
             dataDisplay.innerHTML = `<strong>${title}:</strong><br>${JSON.stringify(data, null, 2)}`;
             dataDisplay.classList.remove('hidden');
         }
+
+        function setButtonLoading(buttonId, isLoading) {
+            const button = document.getElementById(buttonId);
+            if (isLoading) {
+                button.innerHTML = '<span class="loading"></span> Loading...';
+                button.disabled = true;
+            } else {
+                button.innerHTML = button.getAttribute('data-original-text') || button.innerHTML;
+                button.disabled = false;
+            }
+        }
+
+        // Store original button text
+        document.addEventListener('DOMContentLoaded', function() {
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                button.setAttribute('data-original-text', button.innerHTML);
+            });
+        });
 
         async function testSpotifyAPI() {
             try {
@@ -215,6 +323,128 @@
             } catch (error) {
                 updateStatus('❌ API test failed: ' + error.message, 'error');
             }
+        }
+
+        async function fetchDataset() {
+            try {
+                setButtonLoading('fetchDatasetBtn', true);
+                updateStatus('🔄 Fetching current playlist dataset...');
+                
+                const response = await fetch('/api/fetch-dataset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Dataset fetch failed: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Dataset fetched successfully!', 'success');
+                    currentDataset = data.datasetPath;
+                    showData(data, 'Dataset Fetch Result');
+                }
+            } catch (error) {
+                updateStatus('❌ Dataset fetch failed: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('fetchDatasetBtn', false);
+            }
+        }
+
+        async function listDatasets() {
+            try {
+                setButtonLoading('listDatasetsBtn', true);
+                const response = await fetch('/api/datasets');
+                const data = await response.json();
+                
+                const datasetsList = document.getElementById('datasetsList');
+                if (data.datasets.length === 0) {
+                    datasetsList.innerHTML = '<p>No datasets found. Fetch a dataset first!</p>';
+                } else {
+                    datasetsList.innerHTML = data.datasets.map(dataset => `
+                        <div class="dataset-item" onclick="selectDataset('${dataset.path}')">
+                            <strong>${dataset.name}</strong><br>
+                            <small>Date: ${dataset.date}</small>
+                        </div>
+                    `).join('');
+                }
+                datasetsList.classList.remove('hidden');
+            } catch (error) {
+                updateStatus('❌ Failed to list datasets: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('listDatasetsBtn', false);
+            }
+        }
+
+        function selectDataset(datasetPath) {
+            currentDataset = datasetPath;
+            updateStatus('✅ Selected dataset: ' + datasetPath, 'success');
+        }
+
+        async function buildMap() {
+            if (!currentDataset) {
+                updateStatus('❌ Please select a dataset first', 'error');
+                return;
+            }
+            
+            try {
+                setButtonLoading('buildMapBtn', true);
+                updateStatus('🔄 Building artist map from dataset...');
+                
+                const response = await fetch('/api/build-map', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ datasetPath: currentDataset })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Map build failed: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Map built successfully!', 'success');
+                    currentMap = data.mapFile;
+                    showData(data, 'Map Build Result');
+                }
+            } catch (error) {
+                updateStatus('❌ Map build failed: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('buildMapBtn', false);
+            }
+        }
+
+        async function listMaps() {
+            try {
+                setButtonLoading('listMapsBtn', true);
+                const response = await fetch('/api/maps');
+                const data = await response.json();
+                
+                const mapsList = document.getElementById('mapsList');
+                if (data.maps.length === 0) {
+                    mapsList.innerHTML = '<p>No maps found. Build a map first!</p>';
+                } else {
+                    mapsList.innerHTML = data.maps.map(map => `
+                        <div class="map-item" onclick="selectMap('${map.url}')">
+                            <strong>${map.name}</strong><br>
+                            <small>Date: ${map.date}</small>
+                        </div>
+                    `).join('');
+                }
+                mapsList.classList.remove('hidden');
+            } catch (error) {
+                updateStatus('❌ Failed to list maps: ' + error.message, 'error');
+            } finally {
+                setButtonLoading('listMapsBtn', false);
+            }
+        }
+
+        function selectMap(mapUrl) {
+            currentMap = mapUrl;
+            updateStatus('✅ Selected map: ' + mapUrl, 'success');
         }
 
         async function getFeaturedPlaylists() {
