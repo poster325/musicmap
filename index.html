@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Music Map</title>
+    <title>🎤 Artist Ecosystem Map</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -68,22 +68,6 @@
             flex: 1;
             min-width: 120px;
         }
-        .login-btn {
-            background: #1DB954;
-            color: white;
-        }
-        .login-btn:hover {
-            background: #1ed760;
-            transform: translateY(-2px);
-        }
-        .refresh-btn {
-            background: #ff6b35;
-            color: white;
-        }
-        .refresh-btn:hover {
-            background: #ff7f50;
-            transform: translateY(-2px);
-        }
         .test-btn {
             background: #4a90e2;
             color: white;
@@ -100,16 +84,15 @@
             background: #ba68c8;
             transform: translateY(-2px);
         }
-        .token-display {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 1rem;
-            border-radius: 10px;
-            margin-top: 1rem;
-            font-family: monospace;
-            font-size: 0.8rem;
-            word-break: break-all;
-            max-height: 100px;
-            overflow-y: auto;
+        .visualization-btn {
+            background: #1DB954;
+            color: white;
+            font-size: 1.1rem;
+            padding: 15px 30px;
+        }
+        .visualization-btn:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
         }
         .data-display {
             background: rgba(0, 0, 0, 0.3);
@@ -147,122 +130,68 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎵 Music Map</h1>
-        <p>Your music discovery journey starts here</p>
+        <h1>🎤 Artist Ecosystem Map</h1>
+        <p>Discover relationships between artists in the global music ecosystem</p>
         
         <div id="status" class="status">
-            🚀 Ready for development!
+            🚀 Ready to analyze the music ecosystem!
         </div>
         
         <div class="button-group">
-            <button id="loginBtn" class="login-btn" onclick="loginToSpotify()">
-                🔐 Login with Spotify
+            <button id="testBtn" class="test-btn" onclick="testSpotifyAPI()">
+                🎵 Test API Connection
             </button>
             
             <div class="button-row">
-                <button id="refreshBtn" class="refresh-btn hidden" onclick="refreshToken()">
-                    🔄 Refresh Token
+                <button id="featuredBtn" class="data-btn" onclick="getFeaturedPlaylists()">
+                    ⭐ Featured Playlists
                 </button>
                 
-                <button id="testBtn" class="test-btn hidden" onclick="testSpotifyAPI()">
-                    🎵 Test API
+                <button id="trendingBtn" class="data-btn" onclick="getTrendingPlaylists()">
+                    🔥 Trending Music
                 </button>
             </div>
             
             <div class="button-row">
-                <button id="playlistsBtn" class="data-btn hidden" onclick="getUserPlaylists()">
-                    📋 My Playlists
+                <button id="ecosystemBtn" class="data-btn" onclick="getMusicEcosystemData()">
+                    🌍 Full Ecosystem
                 </button>
                 
-                <button id="topTracksBtn" class="data-btn hidden" onclick="getTopTracks()">
-                    🏆 Top Tracks
+                <button id="categoriesBtn" class="data-btn" onclick="getCategories()">
+                    🎼 Music Categories
                 </button>
             </div>
             
             <div class="button-row">
-                <button id="trendingBtn" class="data-btn hidden" onclick="getTrendingPlaylists()">
-                    🔥 Trending
+                <button id="genresBtn" class="data-btn" onclick="getGenres()">
+                    🎵 Available Genres
                 </button>
                 
-                <button id="featuredBtn" class="data-btn hidden" onclick="getFeaturedPlaylists()">
-                    ⭐ Featured
-                </button>
-            </div>
-            
-            <div class="button-row">
-                <button id="ecosystemBtn" class="data-btn hidden" onclick="getMusicEcosystemData()">
-                    🌍 Ecosystem
-                </button>
-                
-                <button id="categoriesBtn" class="data-btn hidden" onclick="getCategories()">
-                    🎼 Categories
-                </button>
-            </div>
-            
-            <div class="button-row">
-                <button id="genresBtn" class="data-btn hidden" onclick="getGenres()">
-                    🎼 Genres
-                </button>
-                
-                <button id="playlistBtn" class="data-btn hidden" onclick="getPlaylistDetails()">
+                <button id="playlistBtn" class="data-btn" onclick="getPlaylistDetails()">
                     📝 Playlist Details
                 </button>
             </div>
             
             <div class="button-row">
-                <button id="visualizationBtn" class="data-btn hidden" onclick="openVisualization()">
-                    🗺️ Music Map
+                <button id="visualizationBtn" class="visualization-btn" onclick="openVisualization()">
+                    🗺️ Open Artist Map
                 </button>
             </div>
             
-            <div class="input-group hidden" id="playlistInput">
+            <div class="input-group" id="playlistInput">
                 <input type="text" id="playlistId" placeholder="Enter Playlist ID" />
                 <button onclick="getPlaylistDetails()">Get Details</button>
             </div>
         </div>
         
-        <div id="tokenDisplay" class="token-display hidden"></div>
         <div id="dataDisplay" class="data-display hidden"></div>
     </div>
 
     <script>
-        let currentToken = null;
-
-        // Check URL parameters for auth success/error
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('success') === 'true') {
-            updateStatus('✅ Successfully authenticated with Spotify!', 'success');
-            showAuthenticatedButtons();
-        } else if (urlParams.get('error')) {
-            updateStatus('❌ Authentication failed: ' + urlParams.get('error'), 'error');
-        }
-
         function updateStatus(message, type = '') {
             const statusEl = document.getElementById('status');
             statusEl.textContent = message;
             statusEl.className = 'status ' + type;
-        }
-
-        function showAuthenticatedButtons() {
-            document.getElementById('refreshBtn').classList.remove('hidden');
-            document.getElementById('testBtn').classList.remove('hidden');
-            document.getElementById('playlistsBtn').classList.remove('hidden');
-            document.getElementById('topTracksBtn').classList.remove('hidden');
-            document.getElementById('trendingBtn').classList.remove('hidden');
-            document.getElementById('featuredBtn').classList.remove('hidden');
-            document.getElementById('ecosystemBtn').classList.remove('hidden');
-            document.getElementById('categoriesBtn').classList.remove('hidden');
-            document.getElementById('genresBtn').classList.remove('hidden');
-            document.getElementById('playlistBtn').classList.remove('hidden');
-            document.getElementById('playlistInput').classList.remove('hidden');
-            document.getElementById('visualizationBtn').classList.remove('hidden');
-            document.getElementById('loginBtn').textContent = '🔐 Re-authenticate';
-        }
-
-        function showToken(token) {
-            const tokenDisplay = document.getElementById('tokenDisplay');
-            tokenDisplay.textContent = 'Access Token: ' + token.substring(0, 50) + '...';
-            tokenDisplay.classList.remove('hidden');
         }
 
         function showData(data, title) {
@@ -271,89 +200,89 @@
             dataDisplay.classList.remove('hidden');
         }
 
-        async function loginToSpotify() {
-            try {
-                updateStatus('🔄 Redirecting to Spotify...');
-                const response = await fetch('/auth/spotify');
-                const data = await response.json();
-                window.location.href = data.authUrl;
-            } catch (error) {
-                updateStatus('❌ Failed to initiate login: ' + error.message, 'error');
-            }
-        }
-
-        async function refreshToken() {
-            try {
-                updateStatus('🔄 Refreshing token...');
-                const response = await fetch('/refresh-token', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentToken = data.access_token;
-                    updateStatus('✅ Token refreshed successfully!', 'success');
-                    showToken(currentToken);
-                } else {
-                    updateStatus('❌ Failed to refresh token: ' + data.error, 'error');
-                }
-            } catch (error) {
-                updateStatus('❌ Failed to refresh token: ' + error.message, 'error');
-            }
-        }
-
         async function testSpotifyAPI() {
             try {
-                updateStatus('🔄 Testing Spotify API...');
+                updateStatus('🔄 Testing Spotify API connection...');
                 const response = await fetch('/test-spotify');
                 const data = await response.json();
                 
                 if (data.error) {
                     updateStatus('❌ API test failed: ' + data.error, 'error');
                 } else {
-                    updateStatus('✅ API test successful! Welcome, ' + data.display_name, 'success');
-                    showData(data, 'User Profile');
+                    updateStatus('✅ API connection successful! Found ' + data.playlistsFound + ' playlists', 'success');
+                    showData(data, 'API Test Result');
                 }
             } catch (error) {
                 updateStatus('❌ API test failed: ' + error.message, 'error');
             }
         }
 
-        async function getUserPlaylists() {
+        async function getFeaturedPlaylists() {
             try {
-                updateStatus('🔄 Fetching your playlists...');
-                const response = await fetch('/user-playlists?limit=10');
+                updateStatus('🔄 Fetching featured playlists...');
+                const response = await fetch('/featured-playlists?limit=10');
                 const data = await response.json();
                 
                 if (data.error) {
-                    updateStatus('❌ Failed to fetch playlists: ' + data.error, 'error');
+                    updateStatus('❌ Failed to fetch featured playlists: ' + data.error, 'error');
                 } else {
-                    updateStatus('✅ Found ' + data.items.length + ' playlists!', 'success');
-                    showData(data, 'User Playlists');
+                    updateStatus('✅ Found ' + data.playlists.items.length + ' featured playlists!', 'success');
+                    showData(data, 'Featured Playlists');
                 }
             } catch (error) {
-                updateStatus('❌ Failed to fetch playlists: ' + error.message, 'error');
+                updateStatus('❌ Failed to fetch featured playlists: ' + error.message, 'error');
             }
         }
 
-        async function getTopTracks() {
+        async function getTrendingPlaylists() {
             try {
-                updateStatus('🔄 Fetching your top tracks...');
-                const response = await fetch('/user-top-tracks?limit=10&time_range=medium_term');
+                updateStatus('🔄 Fetching trending music...');
+                const response = await fetch('/trending-playlists?limit=10');
                 const data = await response.json();
                 
                 if (data.error) {
-                    updateStatus('❌ Failed to fetch top tracks: ' + data.error, 'error');
+                    updateStatus('❌ Failed to fetch trending music: ' + data.error, 'error');
                 } else {
-                    updateStatus('✅ Found ' + data.items.length + ' top tracks!', 'success');
-                    showData(data, 'Top Tracks');
+                    const totalItems = (data.newReleases?.length || 0) + (data.charts?.length || 0);
+                    updateStatus('✅ Found ' + totalItems + ' trending items!', 'success');
+                    showData(data, 'Trending Music');
                 }
             } catch (error) {
-                updateStatus('❌ Failed to fetch top tracks: ' + error.message, 'error');
+                updateStatus('❌ Failed to fetch trending music: ' + error.message, 'error');
+            }
+        }
+
+        async function getMusicEcosystemData() {
+            try {
+                updateStatus('🔄 Fetching comprehensive ecosystem data...');
+                const response = await fetch('/music-ecosystem-data?limit=20');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch ecosystem data: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Ecosystem data loaded! ' + data.totalPlaylists + ' playlists, ' + data.totalAlbums + ' albums', 'success');
+                    showData(data, 'Music Ecosystem Data');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch ecosystem data: ' + error.message, 'error');
+            }
+        }
+
+        async function getCategories() {
+            try {
+                updateStatus('🔄 Fetching music categories...');
+                const response = await fetch('/categories?limit=15');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch categories: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.categories.items.length + ' music categories!', 'success');
+                    showData(data, 'Music Categories');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch categories: ' + error.message, 'error');
             }
         }
 
@@ -401,89 +330,9 @@
             window.open('/visualization', '_blank');
         }
 
-        async function getTrendingPlaylists() {
-            try {
-                updateStatus('🔄 Fetching trending playlists...');
-                const response = await fetch('/trending-playlists');
-                const data = await response.json();
-                
-                if (data.error) {
-                    updateStatus('❌ Failed to fetch trending playlists: ' + data.error, 'error');
-                } else {
-                    updateStatus('✅ Found ' + data.playlists.length + ' trending playlists!', 'success');
-                    showData(data, 'Trending Playlists');
-                }
-            } catch (error) {
-                updateStatus('❌ Failed to fetch trending playlists: ' + error.message, 'error');
-            }
-        }
-
-        async function getFeaturedPlaylists() {
-            try {
-                updateStatus('🔄 Fetching featured playlists...');
-                const response = await fetch('/featured-playlists?limit=20');
-                const data = await response.json();
-                
-                if (data.error) {
-                    updateStatus('❌ Failed to fetch featured playlists: ' + data.error, 'error');
-                } else {
-                    updateStatus('✅ Found ' + data.playlists.items.length + ' featured playlists!', 'success');
-                    showData(data, 'Featured Playlists');
-                }
-            } catch (error) {
-                updateStatus('❌ Failed to fetch featured playlists: ' + error.message, 'error');
-            }
-        }
-
-        async function getCategories() {
-            try {
-                updateStatus('🔄 Fetching music categories...');
-                const response = await fetch('/categories?limit=20');
-                const data = await response.json();
-                
-                if (data.error) {
-                    updateStatus('❌ Failed to fetch categories: ' + data.error, 'error');
-                } else {
-                    updateStatus('✅ Found ' + data.categories.items.length + ' categories!', 'success');
-                    showData(data, 'Music Categories');
-                }
-            } catch (error) {
-                updateStatus('❌ Failed to fetch categories: ' + error.message, 'error');
-            }
-        }
-
-        async function getMusicEcosystemData() {
-            try {
-                updateStatus('🔄 Fetching comprehensive music ecosystem data...');
-                const response = await fetch('/music-ecosystem-data?limit=15');
-                const data = await response.json();
-                
-                if (data.error) {
-                    updateStatus('❌ Failed to fetch ecosystem data: ' + data.error, 'error');
-                } else {
-                    const totalPlaylists = data.featuredPlaylists.length + data.categoryPlaylists.length;
-                    updateStatus('✅ Found ' + totalPlaylists + ' playlists across ecosystem!', 'success');
-                    showData(data, 'Music Ecosystem Data');
-                }
-            } catch (error) {
-                updateStatus('❌ Failed to fetch ecosystem data: ' + error.message, 'error');
-            }
-        }
-
-        // Check if we already have a token on page load
-        window.addEventListener('load', async () => {
-            try {
-                const response = await fetch('/access-token');
-                if (response.ok) {
-                    const data = await response.json();
-                    currentToken = data.access_token;
-                    showAuthenticatedButtons();
-                    showToken(currentToken);
-                    updateStatus('✅ Already authenticated with Spotify!', 'success');
-                }
-            } catch (error) {
-                // No token available, which is fine
-            }
+        // Auto-test API connection on page load
+        window.addEventListener('load', () => {
+            setTimeout(testSpotifyAPI, 1000);
         });
     </script>
 </body>

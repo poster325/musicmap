@@ -13,12 +13,40 @@ app.use(express.static('.'));
 
 // Spotify configuration
 const SPOTIFY_CLIENT_ID = '1b0ff5378cca441899cca8bebaf71d1a';
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET; // You'll need to set this in your environment
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/callback';
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
-// Store tokens temporarily (in production, use a proper database)
+// Store access token for client credentials flow
 let accessToken = null;
-let refreshToken = null;
+let tokenExpiry = 0;
+
+// Get access token using client credentials flow
+async function getAccessToken() {
+    // Check if current token is still valid (with 5 minute buffer)
+    if (accessToken && Date.now() < tokenExpiry - 300000) {
+        return accessToken;
+    }
+
+    try {
+        const response = await axios.post('https://accounts.spotify.com/api/token',
+            new URLSearchParams({
+                grant_type: 'client_credentials'
+            }), {
+                headers: {
+                    'Authorization': `Basic ${Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64')}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+        accessToken = response.data.access_token;
+        tokenExpiry = Date.now() + (response.data.expires_in * 1000);
+        
+        console.log('✅ Spotify access token refreshed');
+        return accessToken;
+    } catch (error) {
+        console.error('❌ Failed to get access token:', error.response?.data || error.message);
+        throw new Error('Failed to authenticate with Spotify');
+    }
+}
 
 // Routes
 app.get('/', (req, res) => {
@@ -29,143 +57,195 @@ app.get('/visualization', (req, res) => {
     res.sendFile(__dirname + '/music-map-visualization.html');
 });
 
-// Initiate Spotify OAuth
-app.get('/auth/spotify', (req, res) => {
-    const scopes = [
-        'user-read-private',
-        'user-read-email',
-        'user-top-read',
-        'playlist-read-private',
-        'playlist-read-collaborative'
-    ];
-    
-    const authUrl = `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scopes.join(' '))}`;
-    
-    res.json({ authUrl });
-});
-
-// Handle OAuth callback
-app.get('/callback', async (req, res) => {
-    const { code } = req.query;
-    
-    if (!code) {
-        return res.status(400).json({ error: 'Authorization code not found' });
-    }
-    
+// Test Spotify API connection
+app.get('/test-spotify', async (req, res) => {
     try {
-        // Exchange code for tokens
-        const tokenResponse = await axios.post('https://accounts.spotify.com/api/token', 
-            new URLSearchParams({
-                grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: REDIRECT_URI
-            }), {
-                headers: {
-                    'Authorization': `Basic ${Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64')}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
-        
-        accessToken = tokenResponse.data.access_token;
-        refreshToken = tokenResponse.data.refresh_token;
-        
-        res.redirect('/?success=true');
-    } catch (error) {
-        console.error('Token exchange error:', error.response?.data || error.message);
-        res.redirect('/?error=token_exchange_failed');
-    }
-});
-
-// Refresh access token
-app.post('/refresh-token', async (req, res) => {
-    if (!refreshToken) {
-        return res.status(400).json({ error: 'No refresh token available. Please authenticate first.' });
-    }
-    
-    try {
-        const tokenResponse = await axios.post('https://accounts.spotify.com/api/token',
-            new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: refreshToken
-            }), {
-                headers: {
-                    'Authorization': `Basic ${Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64')}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
-        
-        accessToken = tokenResponse.data.access_token;
-        if (tokenResponse.data.refresh_token) {
-            refreshToken = tokenResponse.data.refresh_token;
-        }
+        const token = await getAccessToken();
+        const response = await axios.get('https://api.spotify.com/v1/browse/featured-playlists?limit=1', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
         
         res.json({ 
             success: true, 
-            access_token: accessToken,
-            expires_in: tokenResponse.data.expires_in
+            message: 'Spotify API connection successful',
+            playlistsFound: response.data.playlists.total
         });
-    } catch (error) {
-        console.error('Token refresh error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to refresh token' });
-    }
-});
-
-// Get current access token
-app.get('/access-token', (req, res) => {
-    if (!accessToken) {
-        return res.status(404).json({ error: 'No access token available. Please authenticate first.' });
-    }
-    res.json({ access_token: accessToken });
-});
-
-// Test Spotify API endpoint
-app.get('/test-spotify', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const response = await axios.get('https://api.spotify.com/v1/me', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
     } catch (error) {
         console.error('Spotify API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch user data' });
+        res.status(500).json({ error: 'Failed to connect to Spotify API' });
     }
 });
 
-// Get user's playlists
-app.get('/user-playlists', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
+// Get featured playlists
+app.get('/featured-playlists', async (req, res) => {
     try {
+        const token = await getAccessToken();
         const { limit = 20, offset = 0 } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/me/playlists?limit=${limit}&offset=${offset}`, {
+        
+        const response = await axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}&offset=${offset}`, {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
         res.json(response.data);
     } catch (error) {
-        console.error('Playlists API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch playlists' });
+        console.error('Featured playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch featured playlists' });
     }
 });
 
-// Get playlist details (using the Get Playlist endpoint)
-app.get('/playlist/:playlistId', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
+// Get trending playlists (using new releases and charts)
+app.get('/trending-playlists', async (req, res) => {
     try {
+        const token = await getAccessToken();
+        const { limit = 20 } = req.query;
+        
+        // Get new releases
+        const newReleasesResponse = await axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        // Get charts playlists (global top hits)
+        const chartsResponse = await axios.get('https://api.spotify.com/v1/browse/featured-playlists?limit=10&country=US', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        // Combine and format the data
+        const trendingData = {
+            newReleases: newReleasesResponse.data.albums.items.map(album => ({
+                id: album.id,
+                name: album.name,
+                type: 'album',
+                artists: album.artists,
+                images: album.images,
+                release_date: album.release_date,
+                category: 'new_release'
+            })),
+            charts: chartsResponse.data.playlists.items.map(playlist => ({
+                ...playlist,
+                category: 'chart'
+            }))
+        };
+
+        res.json(trendingData);
+    } catch (error) {
+        console.error('Trending playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch trending playlists' });
+    }
+});
+
+// Get music categories
+app.get('/categories', async (req, res) => {
+    try {
+        const token = await getAccessToken();
+        const { limit = 20 } = req.query;
+        
+        const response = await axios.get(`https://api.spotify.com/v1/browse/categories?limit=${limit}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('Categories API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch categories' });
+    }
+});
+
+// Get playlists by category
+app.get('/category/:categoryId/playlists', async (req, res) => {
+    try {
+        const token = await getAccessToken();
+        const { categoryId } = req.params;
+        const { limit = 20 } = req.query;
+        
+        const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}/playlists?limit=${limit}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('Category playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch category playlists' });
+    }
+});
+
+// Get comprehensive music ecosystem data
+app.get('/music-ecosystem-data', async (req, res) => {
+    try {
+        const token = await getAccessToken();
+        const { limit = 20 } = req.query;
+        
+        // Get featured playlists
+        const featuredResponse = await axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        // Get new releases
+        const newReleasesResponse = await axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        // Get top categories and their playlists
+        const categoriesResponse = await axios.get('https://api.spotify.com/v1/browse/categories?limit=10', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        // Get playlists for top categories
+        const categoryPlaylists = [];
+        for (const category of categoriesResponse.data.categories.items.slice(0, 5)) {
+            try {
+                const categoryPlaylistsResponse = await axios.get(`https://api.spotify.com/v1/browse/categories/${category.id}/playlists?limit=5`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                categoryPlaylists.push(...categoryPlaylistsResponse.data.playlists.items.map(playlist => ({
+                    ...playlist,
+                    category: category.name
+                })));
+            } catch (error) {
+                console.warn(`Failed to fetch playlists for category ${category.name}:`, error.message);
+            }
+        }
+
+        const ecosystemData = {
+            featuredPlaylists: featuredResponse.data.playlists.items,
+            newReleases: newReleasesResponse.data.albums.items,
+            categoryPlaylists: categoryPlaylists,
+            categories: categoriesResponse.data.categories.items,
+            totalPlaylists: featuredResponse.data.playlists.items.length + categoryPlaylists.length,
+            totalAlbums: newReleasesResponse.data.albums.items.length
+        };
+
+        res.json(ecosystemData);
+    } catch (error) {
+        console.error('Ecosystem data API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch ecosystem data' });
+    }
+});
+
+// Get playlist details
+app.get('/playlist/:playlistId', async (req, res) => {
+    try {
+        const token = await getAccessToken();
         const { playlistId } = req.params;
         const { market, fields } = req.query;
         
@@ -181,7 +261,7 @@ app.get('/playlist/:playlistId', async (req, res) => {
         
         const response = await axios.get(url, {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -192,32 +272,16 @@ app.get('/playlist/:playlistId', async (req, res) => {
     }
 });
 
-// Get playlist tracks (using the Get Playlist Items endpoint)
+// Get playlist tracks
 app.get('/playlist/:playlistId/tracks', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
     try {
+        const token = await getAccessToken();
         const { playlistId } = req.params;
-        const { market, fields, limit = 20, offset = 0, additional_types } = req.query;
+        const { limit = 100, offset = 0 } = req.query;
         
-        let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
-        const params = new URLSearchParams();
-        
-        if (market) params.append('market', market);
-        if (fields) params.append('fields', fields);
-        if (limit) params.append('limit', limit);
-        if (offset) params.append('offset', offset);
-        if (additional_types) params.append('additional_types', additional_types);
-        
-        if (params.toString()) {
-            url += `?${params.toString()}`;
-        }
-        
-        const response = await axios.get(url, {
+        const response = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`, {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -228,16 +292,14 @@ app.get('/playlist/:playlistId/tracks', async (req, res) => {
     }
 });
 
-// Get available genres (for recommendations)
+// Get available genres
 app.get('/genres', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
     try {
+        const token = await getAccessToken();
+        
         const response = await axios.get('https://api.spotify.com/v1/recommendations/available-genre-seeds', {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -248,217 +310,15 @@ app.get('/genres', async (req, res) => {
     }
 });
 
-// Get featured playlists (trending/public playlists)
-app.get('/featured-playlists', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { limit = 20, offset = 0, country = 'US' } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}&offset=${offset}&country=${country}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error('Featured playlists API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch featured playlists' });
-    }
-});
-
-// Get new releases
-app.get('/new-releases', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { limit = 20, offset = 0, country = 'US' } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}&offset=${offset}&country=${country}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error('New releases API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch new releases' });
-    }
-});
-
-// Get category playlists (by genre/category)
-app.get('/category-playlists/:categoryId', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { categoryId } = req.params;
-        const { limit = 20, offset = 0, country = 'US' } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}/playlists?limit=${limit}&offset=${offset}&country=${country}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error('Category playlists API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch category playlists' });
-    }
-});
-
-// Get browse categories
-app.get('/categories', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { limit = 20, offset = 0, country = 'US' } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/browse/categories?limit=${limit}&offset=${offset}&country=${country}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error('Categories API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch categories' });
-    }
-});
-
-// Get trending playlists (Today's Top Hits, etc.)
-app.get('/trending-playlists', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        // Get multiple trending playlists
-        const trendingPlaylistIds = [
-            '37i9dQZF1DXcBWIGoYBM5M', // Today's Top Hits
-            '37i9dQZEVXbMDoHDwVN2tF', // Global Top 50
-            '37i9dQZF1DX5Ejj0EkURtP', // All Out 2010s
-            '37i9dQZF1DX4sWSpwq3LiO', // Peaceful Piano
-            '37i9dQZF1DXcF6B6QPhFDv', // Rock Classics
-            '37i9dQZF1DX4sSPUMM6sNx', // Hip Hop Controller
-            '37i9dQZF1DX5Vy6DFOcx00', // Indie Mix
-            '37i9dQZF1DX0XUsuxWHRQd', // RapCaviar
-            '37i9dQZF1DX4o1FOcJovx8', // Hot Country
-            '37i9dQZF1DX5Vy6DFOcx00'  // Indie Mix
-        ];
-        
-        const playlists = [];
-        for (const playlistId of trendingPlaylistIds) {
-            try {
-                const response = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
-                playlists.push(response.data);
-            } catch (error) {
-                console.error(`Failed to fetch playlist ${playlistId}:`, error.message);
-            }
-        }
-        
-        res.json({ playlists });
-    } catch (error) {
-        console.error('Trending playlists API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch trending playlists' });
-    }
-});
-
-// Get comprehensive music data for analysis
-app.get('/music-ecosystem-data', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { limit = 10 } = req.query;
-        
-        // Fetch multiple data sources
-        const [featuredPlaylists, newReleases, categories] = await Promise.all([
-            axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}&country=US`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            }),
-            axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}&country=US`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            }),
-            axios.get(`https://api.spotify.com/v1/browse/categories?limit=${limit}&country=US`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            })
-        ]);
-        
-        // Get playlists from top categories
-        const categoryPlaylists = [];
-        const topCategories = categories.data.categories.items.slice(0, 5);
-        
-        for (const category of topCategories) {
-            try {
-                const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${category.id}/playlists?limit=5&country=US`, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
-                });
-                categoryPlaylists.push(...response.data.playlists.items);
-            } catch (error) {
-                console.error(`Failed to fetch playlists for category ${category.id}:`, error.message);
-            }
-        }
-        
-        const ecosystemData = {
-            featuredPlaylists: featuredPlaylists.data.playlists.items,
-            newReleases: newReleases.data.albums.items,
-            categories: categories.data.categories.items,
-            categoryPlaylists: categoryPlaylists,
-            timestamp: new Date().toISOString()
-        };
-        
-        res.json(ecosystemData);
-    } catch (error) {
-        console.error('Music ecosystem data API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch music ecosystem data' });
-    }
-});
-
-// Get user's top tracks
-app.get('/user-top-tracks', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
-    try {
-        const { time_range = 'medium_term', limit = 20, offset = 0 } = req.query;
-        const response = await axios.get(`https://api.spotify.com/v1/me/top/tracks?time_range=${time_range}&limit=${limit}&offset=${offset}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        res.json(response.data);
-    } catch (error) {
-        console.error('Top tracks API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch top tracks' });
-    }
-});
-
 // Get track audio features
 app.get('/track/:trackId/features', async (req, res) => {
-    if (!accessToken) {
-        return res.status(400).json({ error: 'No access token available' });
-    }
-    
     try {
+        const token = await getAccessToken();
         const { trackId } = req.params;
+        
         const response = await axios.get(`https://api.spotify.com/v1/audio-features/${trackId}`, {
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${token}`
             }
         });
         
@@ -469,6 +329,7 @@ app.get('/track/:trackId/features', async (req, res) => {
     }
 });
 
+// Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Visit http://localhost:${PORT} to start`);
