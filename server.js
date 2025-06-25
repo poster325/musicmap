@@ -248,6 +248,185 @@ app.get('/genres', async (req, res) => {
     }
 });
 
+// Get featured playlists (trending/public playlists)
+app.get('/featured-playlists', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        const { limit = 20, offset = 0, country = 'US' } = req.query;
+        const response = await axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}&offset=${offset}&country=${country}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('Featured playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch featured playlists' });
+    }
+});
+
+// Get new releases
+app.get('/new-releases', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        const { limit = 20, offset = 0, country = 'US' } = req.query;
+        const response = await axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}&offset=${offset}&country=${country}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('New releases API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch new releases' });
+    }
+});
+
+// Get category playlists (by genre/category)
+app.get('/category-playlists/:categoryId', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        const { categoryId } = req.params;
+        const { limit = 20, offset = 0, country = 'US' } = req.query;
+        const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}/playlists?limit=${limit}&offset=${offset}&country=${country}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('Category playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch category playlists' });
+    }
+});
+
+// Get browse categories
+app.get('/categories', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        const { limit = 20, offset = 0, country = 'US' } = req.query;
+        const response = await axios.get(`https://api.spotify.com/v1/browse/categories?limit=${limit}&offset=${offset}&country=${country}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('Categories API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch categories' });
+    }
+});
+
+// Get trending playlists (Today's Top Hits, etc.)
+app.get('/trending-playlists', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        // Get multiple trending playlists
+        const trendingPlaylistIds = [
+            '37i9dQZF1DXcBWIGoYBM5M', // Today's Top Hits
+            '37i9dQZEVXbMDoHDwVN2tF', // Global Top 50
+            '37i9dQZF1DX5Ejj0EkURtP', // All Out 2010s
+            '37i9dQZF1DX4sWSpwq3LiO', // Peaceful Piano
+            '37i9dQZF1DXcF6B6QPhFDv', // Rock Classics
+            '37i9dQZF1DX4sSPUMM6sNx', // Hip Hop Controller
+            '37i9dQZF1DX5Vy6DFOcx00', // Indie Mix
+            '37i9dQZF1DX0XUsuxWHRQd', // RapCaviar
+            '37i9dQZF1DX4o1FOcJovx8', // Hot Country
+            '37i9dQZF1DX5Vy6DFOcx00'  // Indie Mix
+        ];
+        
+        const playlists = [];
+        for (const playlistId of trendingPlaylistIds) {
+            try {
+                const response = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                playlists.push(response.data);
+            } catch (error) {
+                console.error(`Failed to fetch playlist ${playlistId}:`, error.message);
+            }
+        }
+        
+        res.json({ playlists });
+    } catch (error) {
+        console.error('Trending playlists API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch trending playlists' });
+    }
+});
+
+// Get comprehensive music data for analysis
+app.get('/music-ecosystem-data', async (req, res) => {
+    if (!accessToken) {
+        return res.status(400).json({ error: 'No access token available' });
+    }
+    
+    try {
+        const { limit = 10 } = req.query;
+        
+        // Fetch multiple data sources
+        const [featuredPlaylists, newReleases, categories] = await Promise.all([
+            axios.get(`https://api.spotify.com/v1/browse/featured-playlists?limit=${limit}&country=US`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            }),
+            axios.get(`https://api.spotify.com/v1/browse/new-releases?limit=${limit}&country=US`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            }),
+            axios.get(`https://api.spotify.com/v1/browse/categories?limit=${limit}&country=US`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            })
+        ]);
+        
+        // Get playlists from top categories
+        const categoryPlaylists = [];
+        const topCategories = categories.data.categories.items.slice(0, 5);
+        
+        for (const category of topCategories) {
+            try {
+                const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${category.id}/playlists?limit=5&country=US`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                categoryPlaylists.push(...response.data.playlists.items);
+            } catch (error) {
+                console.error(`Failed to fetch playlists for category ${category.id}:`, error.message);
+            }
+        }
+        
+        const ecosystemData = {
+            featuredPlaylists: featuredPlaylists.data.playlists.items,
+            newReleases: newReleases.data.albums.items,
+            categories: categories.data.categories.items,
+            categoryPlaylists: categoryPlaylists,
+            timestamp: new Date().toISOString()
+        };
+        
+        res.json(ecosystemData);
+    } catch (error) {
+        console.error('Music ecosystem data API error:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch music ecosystem data' });
+    }
+});
+
 // Get user's top tracks
 app.get('/user-top-tracks', async (req, res) => {
     if (!accessToken) {

@@ -180,6 +180,26 @@
             </div>
             
             <div class="button-row">
+                <button id="trendingBtn" class="data-btn hidden" onclick="getTrendingPlaylists()">
+                    🔥 Trending
+                </button>
+                
+                <button id="featuredBtn" class="data-btn hidden" onclick="getFeaturedPlaylists()">
+                    ⭐ Featured
+                </button>
+            </div>
+            
+            <div class="button-row">
+                <button id="ecosystemBtn" class="data-btn hidden" onclick="getMusicEcosystemData()">
+                    🌍 Ecosystem
+                </button>
+                
+                <button id="categoriesBtn" class="data-btn hidden" onclick="getCategories()">
+                    🎼 Categories
+                </button>
+            </div>
+            
+            <div class="button-row">
                 <button id="genresBtn" class="data-btn hidden" onclick="getGenres()">
                     🎼 Genres
                 </button>
@@ -228,6 +248,10 @@
             document.getElementById('testBtn').classList.remove('hidden');
             document.getElementById('playlistsBtn').classList.remove('hidden');
             document.getElementById('topTracksBtn').classList.remove('hidden');
+            document.getElementById('trendingBtn').classList.remove('hidden');
+            document.getElementById('featuredBtn').classList.remove('hidden');
+            document.getElementById('ecosystemBtn').classList.remove('hidden');
+            document.getElementById('categoriesBtn').classList.remove('hidden');
             document.getElementById('genresBtn').classList.remove('hidden');
             document.getElementById('playlistBtn').classList.remove('hidden');
             document.getElementById('playlistInput').classList.remove('hidden');
@@ -375,6 +399,75 @@
 
         function openVisualization() {
             window.open('/visualization', '_blank');
+        }
+
+        async function getTrendingPlaylists() {
+            try {
+                updateStatus('🔄 Fetching trending playlists...');
+                const response = await fetch('/trending-playlists');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch trending playlists: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.playlists.length + ' trending playlists!', 'success');
+                    showData(data, 'Trending Playlists');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch trending playlists: ' + error.message, 'error');
+            }
+        }
+
+        async function getFeaturedPlaylists() {
+            try {
+                updateStatus('🔄 Fetching featured playlists...');
+                const response = await fetch('/featured-playlists?limit=20');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch featured playlists: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.playlists.items.length + ' featured playlists!', 'success');
+                    showData(data, 'Featured Playlists');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch featured playlists: ' + error.message, 'error');
+            }
+        }
+
+        async function getCategories() {
+            try {
+                updateStatus('🔄 Fetching music categories...');
+                const response = await fetch('/categories?limit=20');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch categories: ' + data.error, 'error');
+                } else {
+                    updateStatus('✅ Found ' + data.categories.items.length + ' categories!', 'success');
+                    showData(data, 'Music Categories');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch categories: ' + error.message, 'error');
+            }
+        }
+
+        async function getMusicEcosystemData() {
+            try {
+                updateStatus('🔄 Fetching comprehensive music ecosystem data...');
+                const response = await fetch('/music-ecosystem-data?limit=15');
+                const data = await response.json();
+                
+                if (data.error) {
+                    updateStatus('❌ Failed to fetch ecosystem data: ' + data.error, 'error');
+                } else {
+                    const totalPlaylists = data.featuredPlaylists.length + data.categoryPlaylists.length;
+                    updateStatus('✅ Found ' + totalPlaylists + ' playlists across ecosystem!', 'success');
+                    showData(data, 'Music Ecosystem Data');
+                }
+            } catch (error) {
+                updateStatus('❌ Failed to fetch ecosystem data: ' + error.message, 'error');
+            }
         }
 
         // Check if we already have a token on page load

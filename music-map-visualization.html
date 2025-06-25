@@ -12,7 +12,7 @@
     <script src="https://unpkg.com/cytoscape-force@2.0.0/cytoscape-force.js"></script>
     
     <!-- Graph Constructor -->
-    <script src="graph-constructor.js"></script>
+    <script src="artist-graph-constructor.js"></script>
     
     <style>
         body {
@@ -147,11 +147,11 @@
 </head>
 <body>
     <div id="header">
-        <div id="title">🎵 Interactive Music Map</div>
+        <div id="title">🎤 Artist Ecosystem Map</div>
         <div id="controls">
             <div class="control-group">
-                <label>Min Edge Weight:</label>
-                <input type="number" id="minWeight" value="10" min="1" max="100">
+                <label>Min Connection Weight:</label>
+                <input type="number" id="minWeight" value="3" min="1" max="50">
             </div>
             <div class="control-group">
                 <label>Year Filter:</label>
@@ -163,7 +163,7 @@
                 <label>Popularity Min:</label>
                 <input type="number" id="minPopularity" value="0" min="0" max="100">
             </div>
-            <button onclick="buildGraph()">🔍 Build Graph</button>
+            <button onclick="buildGraph()">🔍 Build Artist Graph</button>
             <button onclick="exportGraph()">💾 Export</button>
         </div>
     </div>
@@ -273,10 +273,25 @@
                 }
             });
 
-            cy.on('mouseover', 'node', function(evt) {
-                const node = evt.target;
-                node.style('border-color', '#1ed760');
-                node.style('border-width', '2px');
+            cy.on('mouseover', 'node', function(event) {
+                const node = event.target;
+                const data = node.data();
+                
+                const tooltip = document.getElementById('tooltip');
+                tooltip.innerHTML = `
+                    <div class="tooltip-header">🎤 ${data.name}</div>
+                    <div class="tooltip-content">
+                        <div><strong>Track Count:</strong> ${data.trackCount}</div>
+                        <div><strong>Avg Popularity:</strong> ${data.avgPopularity}/100</div>
+                        <div><strong>Avg Release Year:</strong> ${data.avgReleaseYear}</div>
+                        <div><strong>Connections:</strong> ${node.connectedEdges().length}</div>
+                    </div>
+                    <div class="tooltip-footer">
+                        <a href="${data.spotifyUrl}" target="_blank">Open in Spotify</a>
+                    </div>
+                `;
+                
+                tooltip.style.display = 'block';
             });
 
             cy.on('mouseout', 'node', function(evt) {
@@ -294,6 +309,26 @@
             cy.on('unselect', 'node', function(evt) {
                 updateStats();
             });
+
+            // Edge tooltip
+            cy.on('mouseover', 'edge', function(event) {
+                const edge = event.target;
+                const data = edge.data();
+                const sourceNode = cy.getElementById(data.source);
+                const targetNode = cy.getElementById(data.target);
+                
+                const tooltip = document.getElementById('tooltip');
+                tooltip.innerHTML = `
+                    <div class="tooltip-header">🔗 Artist Connection</div>
+                    <div class="tooltip-content">
+                        <div><strong>${sourceNode.data('name')}</strong> ↔ <strong>${targetNode.data('name')}</strong></div>
+                        <div><strong>Co-occurrences:</strong> ${data.weight}</div>
+                        <div><strong>Shared Playlists:</strong> ${data.playlists}</div>
+                    </div>
+                `;
+                
+                tooltip.style.display = 'block';
+            });
         }
 
         // Build the music graph
@@ -301,28 +336,66 @@
             showLoading(true);
             
             try {
-                // Get user playlists from the server
-                const response = await fetch('/user-playlists?limit=50');
-                const playlistsData = await response.json();
+                updateStatus('🔄 Fetching music ecosystem data for artist analysis...');
                 
-                if (playlistsData.error) {
-                    throw new Error(playlistsData.error);
+                // Get comprehensive ecosystem data
+                const ecosystemResponse = await fetch('/music-ecosystem-data?limit=50');
+                const ecosystemData = await ecosystemResponse.json();
+                
+                if (ecosystemData.error) {
+                    throw new Error(ecosystemData.error);
                 }
 
-                // Get detailed playlist data with tracks
+                // Get trending playlists
+                const trendingResponse = await fetch('/trending-playlists');
+                const trendingData = await trendingResponse.json();
+                
+                if (trendingData.error) {
+                    console.warn('Failed to fetch trending playlists:', trendingData.error);
+                }
+
+                // Combine all playlists for analysis
+                const allPlaylists = [];
+                
+                // Add featured playlists
+                if (ecosystemData.featuredPlaylists) {
+                    allPlaylists.push(...ecosystemData.featuredPlaylists);
+                }
+                
+                // Add category playlists
+                if (ecosystemData.categoryPlaylists) {
+                    allPlaylists.push(...ecosystemData.categoryPlaylists);
+                }
+                
+                // Add trending playlists
+                if (trendingData.playlists) {
+                    allPlaylists.push(...trendingData.playlists);
+                }
+
+                console.log(`📊 Analyzing ${allPlaylists.length} playlists for artist relationships...`);
+
+                // Get detailed track data for each playlist
                 const playlistsWithTracks = [];
-                for (const playlist of playlistsData.items.slice(0, 10)) { // Limit to first 10 playlists
-                    const tracksResponse = await fetch(`/playlist/${playlist.id}/tracks?limit=100`);
-                    const tracksData = await tracksResponse.json();
-                    
-                    if (!tracksData.error) {
-                        playlist.tracks = tracksData;
-                        playlistsWithTracks.push(playlist);
+                const processedPlaylists = allPlaylists.slice(0, 100); // Can handle more playlists with artist analysis
+                
+                for (const playlist of processedPlaylists) {
+                    try {
+                        const tracksResponse = await fetch(`/playlist/${playlist.id}/tracks?limit=100`);
+                        const tracksData = await tracksResponse.json();
+                        
+                        if (!tracksData.error && tracksData.items && tracksData.items.length > 0) {
+                            playlist.tracks = tracksData;
+                            playlistsWithTracks.push(playlist);
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to fetch tracks for playlist ${playlist.name}:`, error.message);
                     }
                 }
 
-                // Build graph
-                graphConstructor = new MusicGraphConstructor();
+                console.log(`✅ Successfully processed ${playlistsWithTracks.length} playlists with tracks`);
+
+                // Build artist graph from ecosystem data
+                graphConstructor = new ArtistGraphConstructor();
                 graphConstructor.minEdgeWeight = parseInt(document.getElementById('minWeight').value);
                 
                 currentGraphData = graphConstructor.buildGraphFromPlaylists(playlistsWithTracks);
@@ -347,11 +420,12 @@
                 // Populate year filter
                 populateYearFilter();
                 
-                console.log('✅ Graph built successfully!');
+                console.log('✅ Artist-based music graph built successfully!');
+                updateStatus('✅ Artist ecosystem graph created! Analyzing ' + playlistsWithTracks.length + ' playlists', 'success');
                 
             } catch (error) {
-                console.error('❌ Error building graph:', error);
-                alert('Error building graph: ' + error.message);
+                console.error('❌ Error building artist graph:', error);
+                updateStatus('❌ Error building graph: ' + error.message, 'error');
             } finally {
                 showLoading(false);
             }
@@ -394,15 +468,40 @@
             }
         }
 
-        // Update statistics
+        // Update statistics display
         function updateStats() {
-            const nodes = cy.nodes();
-            const edges = cy.edges();
-            const selected = cy.nodes(':selected');
+            if (!graphConstructor) return;
             
-            document.getElementById('node-count').textContent = nodes.length;
-            document.getElementById('edge-count').textContent = edges.length;
-            document.getElementById('selected-count').textContent = selected.length;
+            const stats = graphConstructor.getGraphStats();
+            const statsDiv = document.getElementById('stats');
+            
+            statsDiv.innerHTML = `
+                <h3>📊 Artist Ecosystem Statistics</h3>
+                <div class="stat-row">
+                    <span class="stat-label">🎤 Artists:</span>
+                    <span class="stat-value">${stats.artists}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">🔗 Connections:</span>
+                    <span class="stat-value">${stats.connections}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">📈 Avg Popularity:</span>
+                    <span class="stat-value">${Math.round(stats.popularity.avg)}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">📅 Avg Release Year:</span>
+                    <span class="stat-value">${Math.round(stats.releaseYears.avg)}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">⚡ Avg Connection Weight:</span>
+                    <span class="stat-value">${Math.round(stats.connectionWeights.avg)}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">🎯 Min Connection Weight:</span>
+                    <span class="stat-value">${graphConstructor.minEdgeWeight}</span>
+                </div>
+            `;
         }
 
         // Populate year filter dropdown
@@ -448,9 +547,16 @@
 
         // Export graph data
         function exportGraph() {
-            if (graphConstructor) {
-                graphConstructor.exportToJSON('music-map-graph.json');
+            if (!graphConstructor) {
+                alert('No graph to export. Please build a graph first.');
+                return;
             }
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `artist-ecosystem-graph-${timestamp}.json`;
+            
+            graphConstructor.exportToJSON(filename);
+            updateStatus('💾 Artist graph exported as ' + filename, 'success');
         }
 
         // Show/hide loading indicator
