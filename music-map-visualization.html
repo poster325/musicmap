@@ -10,6 +10,8 @@
     
     <!-- Cytoscape.js Layouts -->
     <script src="https://unpkg.com/cytoscape-force@2.0.0/cytoscape-force.js"></script>
+    <script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
     
     <!-- Graph Constructor -->
     <script src="artist-graph-constructor.js"></script>
@@ -150,6 +152,16 @@
         <div id="title">🎤 Artist Ecosystem Map</div>
         <div id="controls">
             <div class="control-group">
+                <label>Layout:</label>
+                <select id="layoutType">
+                    <option value="force">Force-Directed</option>
+                    <option value="cose-bilkent">Cose-Bilkent</option>
+                    <option value="dagre">Hierarchical</option>
+                    <option value="random">Random</option>
+                    <option value="grid">Grid</option>
+                </select>
+            </div>
+            <div class="control-group">
                 <label>Min Connection Weight:</label>
                 <input type="number" id="minWeight" value="3" min="1" max="50">
             </div>
@@ -194,6 +206,19 @@
     </div>
 
     <script>
+        // Register Cytoscape.js extensions
+        if (typeof cytoscape !== 'undefined') {
+            if (typeof cytoscapeForce !== 'undefined') {
+                cytoscape.use(cytoscapeForce);
+            }
+            if (typeof cytoscapeCoseBilkent !== 'undefined') {
+                cytoscape.use(cytoscapeCoseBilkent);
+            }
+            if (typeof cytoscapeDagre !== 'undefined') {
+                cytoscape.use(cytoscapeDagre);
+            }
+        }
+
         let cy;
         let graphConstructor;
         let currentGraphData;
@@ -201,134 +226,201 @@
 
         // Initialize the visualization
         function initVisualization() {
-            cy = cytoscape({
-                container: document.getElementById('cy'),
-                style: [
-                    {
-                        selector: 'node',
-                        style: {
-                            'background-color': 'data(color)',
-                            'width': 'data(size)',
-                            'height': 'data(size)',
-                            'label': 'data(name)',
-                            'text-valign': 'center',
-                            'text-halign': 'center',
-                            'text-wrap': 'wrap',
-                            'text-max-width': '80px',
-                            'font-size': '8px',
-                            'color': 'white',
-                            'text-outline-color': 'black',
-                            'text-outline-width': '2px',
-                            'border-color': 'white',
-                            'border-width': '1px',
-                            'border-opacity': '0.3'
+            // Wait for Cytoscape to be available and extensions to be loaded
+            setTimeout(() => {
+                cy = cytoscape({
+                    container: document.getElementById('cy'),
+                    style: [
+                        {
+                            selector: 'node',
+                            style: {
+                                'background-color': 'data(color)',
+                                'width': 'data(size)',
+                                'height': 'data(size)',
+                                'label': 'data(name)',
+                                'text-valign': 'center',
+                                'text-halign': 'center',
+                                'text-wrap': 'wrap',
+                                'text-max-width': '80px',
+                                'font-size': '8px',
+                                'color': 'white',
+                                'text-outline-color': 'black',
+                                'text-outline-width': '2px',
+                                'border-color': 'white',
+                                'border-width': '1px',
+                                'border-opacity': '0.3'
+                            }
+                        },
+                        {
+                            selector: 'edge',
+                            style: {
+                                'width': 'data(thickness)',
+                                'line-color': 'rgba(255, 255, 255, 0.3)',
+                                'opacity': '0.6',
+                                'curve-style': 'bezier'
+                            }
+                        },
+                        {
+                            selector: 'node:selected',
+                            style: {
+                                'border-color': '#1DB954',
+                                'border-width': '3px',
+                                'border-opacity': '1'
+                            }
+                        },
+                        {
+                            selector: 'node:hover',
+                            style: {
+                                'border-color': '#1ed760',
+                                'border-width': '2px',
+                                'border-opacity': '1'
+                            }
                         }
-                    },
-                    {
-                        selector: 'edge',
-                        style: {
-                            'width': 'data(thickness)',
-                            'line-color': 'rgba(255, 255, 255, 0.3)',
-                            'opacity': '0.6',
-                            'curve-style': 'bezier'
-                        }
-                    },
-                    {
-                        selector: 'node:selected',
-                        style: {
-                            'border-color': '#1DB954',
-                            'border-width': '3px',
-                            'border-opacity': '1'
-                        }
-                    },
-                    {
-                        selector: 'node:hover',
-                        style: {
-                            'border-color': '#1ed760',
-                            'border-width': '2px',
-                            'border-opacity': '1'
-                        }
+                    ],
+                    layout: {
+                        name: 'random',
+                        animate: true,
+                        animationDuration: 1000,
+                        fit: true,
+                        padding: 50,
+                        nodeDimensionsIncludeLabels: true
                     }
-                ],
-                layout: {
-                    name: 'force',
-                    animate: true,
-                    animationDuration: 1000,
-                    fit: true,
-                    padding: 50,
-                    nodeDimensionsIncludeLabels: true,
-                    randomize: true
-                }
-            });
+                });
 
-            // Event listeners
-            cy.on('tap', 'node', function(evt) {
-                const node = evt.target;
-                showNodeInfo(node);
-            });
+                // Event listeners
+                cy.on('tap', 'node', function(evt) {
+                    const node = evt.target;
+                    showNodeInfo(node);
+                });
 
-            cy.on('tap', function(evt) {
-                if (evt.target === cy) {
-                    hideNodeInfo();
-                }
-            });
+                cy.on('tap', function(evt) {
+                    if (evt.target === cy) {
+                        hideNodeInfo();
+                    }
+                });
 
-            cy.on('mouseover', 'node', function(event) {
-                const node = event.target;
-                const data = node.data();
-                
-                const tooltip = document.getElementById('tooltip');
-                tooltip.innerHTML = `
-                    <div class="tooltip-header">🎤 ${data.name}</div>
-                    <div class="tooltip-content">
-                        <div><strong>Track Count:</strong> ${data.trackCount}</div>
-                        <div><strong>Avg Popularity:</strong> ${data.avgPopularity}/100</div>
-                        <div><strong>Avg Release Year:</strong> ${data.avgReleaseYear}</div>
-                        <div><strong>Connections:</strong> ${node.connectedEdges().length}</div>
-                    </div>
-                    <div class="tooltip-footer">
-                        <a href="${data.spotifyUrl}" target="_blank">Open in Spotify</a>
-                    </div>
-                `;
-                
-                tooltip.style.display = 'block';
-            });
+                cy.on('mouseover', 'node', function(event) {
+                    const node = event.target;
+                    const data = node.data();
+                    
+                    // Show tooltip or highlight node
+                    node.style('border-color', '#1ed760');
+                    node.style('border-width', '2px');
+                });
 
-            cy.on('mouseout', 'node', function(evt) {
-                const node = evt.target;
-                if (!node.selected()) {
-                    node.style('border-color', 'white');
-                    node.style('border-width', '1px');
-                }
-            });
+                cy.on('mouseout', 'node', function(evt) {
+                    const node = evt.target;
+                    if (!node.selected()) {
+                        node.style('border-color', 'white');
+                        node.style('border-width', '1px');
+                    }
+                });
 
-            cy.on('select', 'node', function(evt) {
-                updateStats();
-            });
+                cy.on('select', 'node', function(evt) {
+                    updateStats();
+                });
 
-            cy.on('unselect', 'node', function(evt) {
-                updateStats();
-            });
+                cy.on('unselect', 'node', function(evt) {
+                    updateStats();
+                });
 
-            // Edge tooltip
-            cy.on('mouseover', 'edge', function(event) {
-                const edge = event.target;
-                const data = edge.data();
-                const sourceNode = cy.getElementById(data.source);
-                const targetNode = cy.getElementById(data.target);
-                
-                const tooltip = document.getElementById('tooltip');
-                tooltip.innerHTML = `
-                    <div class="tooltip-header">🔗 Artist Connection</div>
-                    <div class="tooltip-content">
-                        <div><strong>${sourceNode.data('name')}</strong> ↔ <strong>${targetNode.data('name')}</strong></div>
-                        <div><strong>Co-occurrences:</strong> ${data.weight}</div>
-                        <div><strong>Shared Playlists:</strong> ${data.playlists}</div>
-                    </div>
-                `;
-                
-                tooltip.style.display = 'block';
-            });
+                // Edge tooltip
+                cy.on('mouseover', 'edge', function(event) {
+                    const edge = event.target;
+                    const data = edge.data();
+                    const sourceNode = cy.getElementById(data.source);
+                    const targetNode = cy.getElementById(data.target);
+                    
+                    // Highlight connected nodes
+                    sourceNode.style('border-color', '#1ed760');
+                    targetNode.style('border-color', '#1ed760');
+                });
+
+                cy.on('mouseout', 'edge', function(event) {
+                    const edge = event.target;
+                    const data = edge.data();
+                    const sourceNode = cy.getElementById(data.source);
+                    const targetNode = cy.getElementById(data.target);
+                    
+                    // Reset node highlighting
+                    if (!sourceNode.selected()) {
+                        sourceNode.style('border-color', 'white');
+                    }
+                    if (!targetNode.selected()) {
+                        targetNode.style('border-color', 'white');
+                    }
+                });
+            }, 100);
+        }
+
+        // Get layout configuration based on selected type
+        function getLayoutConfig() {
+            const layoutType = document.getElementById('layoutType').value;
+            
+            const baseConfig = {
+                animate: true,
+                animationDuration: 1000,
+                fit: true,
+                padding: 50,
+                nodeDimensionsIncludeLabels: true
+            };
+
+            switch (layoutType) {
+                case 'force':
+                    return {
+                        ...baseConfig,
+                        name: 'force',
+                        randomize: true,
+                        maxIterations: 1000,
+                        gravity: 0.1,
+                        scaling: 1.1
+                    };
+                case 'cose-bilkent':
+                    return {
+                        ...baseConfig,
+                        name: 'cose-bilkent',
+                        nodeDimensionsIncludeLabels: true,
+                        fit: true,
+                        padding: 30,
+                        randomize: false,
+                        componentSpacing: 100,
+                        nodeRepulsion: 4000,
+                        nodeOverlap: 20,
+                        idealEdgeLength: 10,
+                        edgeElasticity: 100,
+                        nestingFactor: 5,
+                        gravity: 80,
+                        numIter: 1000,
+                        initialTemp: 200,
+                        coolingFactor: 0.95,
+                        minTemp: 1.0
+                    };
+                case 'dagre':
+                    return {
+                        ...baseConfig,
+                        name: 'dagre',
+                        rankDir: 'TB',
+                        rankSep: 50,
+                        nodeSep: 20
+                    };
+                case 'random':
+                    return {
+                        ...baseConfig,
+                        name: 'random'
+                    };
+                case 'grid':
+                    return {
+                        ...baseConfig,
+                        name: 'grid',
+                        cols: 10,
+                        rows: 10
+                    };
+                default:
+                    return {
+                        ...baseConfig,
+                        name: 'random'
+                    };
+            }
         }
 
         // Build the music graph
@@ -405,14 +497,9 @@
                 cy.add(currentGraphData.nodes);
                 cy.add(currentGraphData.edges);
                 
-                // Apply layout
-                cy.layout({
-                    name: 'force',
-                    animate: true,
-                    animationDuration: 1000,
-                    fit: true,
-                    padding: 50
-                }).run();
+                // Apply selected layout
+                const layoutConfig = getLayoutConfig();
+                cy.layout(layoutConfig).run();
 
                 // Update stats
                 updateStats();
@@ -564,6 +651,23 @@
             document.getElementById('loading').style.display = show ? 'block' : 'none';
         }
 
+        // Update status message
+        function updateStatus(message, type = '') {
+            console.log(message);
+            // You can add a status display element if needed
+        }
+
+        // Change layout dynamically
+        function changeLayout() {
+            if (!cy || cy.elements().length === 0) {
+                alert('Please build a graph first');
+                return;
+            }
+            
+            const layoutConfig = getLayoutConfig();
+            cy.layout(layoutConfig).run();
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             initVisualization();
@@ -571,6 +675,7 @@
             // Add filter event listeners
             document.getElementById('yearFilter').addEventListener('change', applyFilters);
             document.getElementById('minPopularity').addEventListener('input', applyFilters);
+            document.getElementById('layoutType').addEventListener('change', changeLayout);
         });
     </script>
 </body>
