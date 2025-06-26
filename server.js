@@ -17,7 +17,6 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('.'));
 
 // Spotify configuration
 const SPOTIFY_CLIENT_ID = '1b0ff5378cca441899cca8bebaf71d1a';
@@ -478,6 +477,10 @@ app.post('/api/copy-map', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// Static file serving (after all API routes)
+app.use(express.static('public'));
+app.use(express.static('.')); // For backward compatibility
 
 // Start server
 app.listen(PORT, () => {
