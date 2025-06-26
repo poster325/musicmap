@@ -98,7 +98,10 @@ app.post('/api/build-map', async (req, res) => {
         
         console.log('🔄 Building map from dataset:', datasetPath);
         
-        await buildGraphFromDataset(datasetPath);
+        // Get Spotify token for artist popularity fetching
+        const token = await getAccessToken();
+        
+        await buildGraphFromDataset(datasetPath, token);
         
         res.json({ 
             success: true, 

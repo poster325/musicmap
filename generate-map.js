@@ -157,15 +157,24 @@ function buildArtistGraph(playlists) {
     };
 }
 
-async function buildGraphFromDataset(datasetPath) {
+async function buildGraphFromDataset(datasetPath, spotifyToken = null) {
     const playlists = await loadDataset(datasetPath);
-    const graphData = buildArtistGraph(playlists);
+    const graphConstructor = new ArtistGraphConstructor();
+    
+    // Set Spotify token if provided
+    if (spotifyToken) {
+        graphConstructor.setSpotifyToken(spotifyToken);
+    }
+    
+    const graphData = await graphConstructor.buildGraphFromPlaylists(playlists);
     const mapData = {
         metadata: {
             generatedAt: new Date().toISOString(),
             playlistsAnalyzed: playlists.length,
             artists: graphData.nodes.length,
-            connections: graphData.edges.length
+            connections: graphData.edges.length,
+            method: 'PMI (Pointwise Mutual Information)',
+            popularitySource: spotifyToken ? 'Artist Top Tracks' : 'Playlist Average'
         },
         graph: graphData
     };

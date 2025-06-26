@@ -1,28 +1,84 @@
 // Artist Graph Constructor for Music Map
-// Implements co-occurrence analysis between artists from playlist data
+// Implements PMI (Pointwise Mutual Information) analysis between artists from playlist data
 
 class ArtistGraphConstructor {
     constructor() {
         this.nodes = new Map(); // artist_id -> artist data
         this.edges = new Map(); // "artist1-artist2" -> edge data
-        this.minEdgeWeight = 3; // Filter threshold (lower for artists)
+        this.minEdgeWeight = 0.1; // Filter threshold for PMI (lower since PMI values are smaller)
+        this.artistPlaylistCount = new Map(); // artist_id -> number of playlists they appear in
+        this.totalPlaylists = 0;
+        this.spotifyToken = null; // Will be set from server
     }
 
     /**
-     * Process playlists and build the artist graph
+     * Set Spotify access token for API calls
+     * @param {string} token - Spotify access token
+     */
+    setSpotifyToken(token) {
+        this.spotifyToken = token;
+    }
+
+    /**
+     * Fetch artist's top tracks and calculate average popularity
+     * @param {string} artistId - Spotify artist ID
+     * @returns {Promise<number>} Average popularity of top tracks
+     */
+    async getArtistTopTracksPopularity(artistId) {
+        if (!this.spotifyToken) {
+            console.warn('No Spotify token available, using fallback popularity');
+            return 50; // Fallback value
+        }
+
+        try {
+            const response = await fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, {
+                headers: {
+                    'Authorization': `Bearer ${this.spotifyToken}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            if (!data.tracks || data.tracks.length === 0) {
+                return 0;
+            }
+
+            // Calculate average popularity of top tracks
+            const totalPopularity = data.tracks.reduce((sum, track) => sum + (track.popularity || 0), 0);
+            const averagePopularity = totalPopularity / data.tracks.length;
+            
+            return averagePopularity;
+        } catch (error) {
+            console.warn(`Failed to fetch top tracks for artist ${artistId}:`, error.message);
+            return 50; // Fallback value
+        }
+    }
+
+    /**
+     * Process playlists and build the artist graph using PMI
      * @param {Array} playlists - Array of playlist objects from Spotify API
      */
-    buildGraphFromPlaylists(playlists) {
-        console.log('🎵 Building artist graph from playlists...');
+    async buildGraphFromPlaylists(playlists) {
+        console.log('🎵 Building artist graph using PMI analysis...');
         
         // Reset graph
         this.nodes.clear();
         this.edges.clear();
+        this.artistPlaylistCount.clear();
+        this.totalPlaylists = playlists.length;
 
-        // Process each playlist
-        playlists.forEach(playlist => {
-            this.processPlaylist(playlist);
-        });
+        // First pass: collect artist statistics and playlist appearances
+        this.collectArtistStatistics(playlists);
+
+        // Second pass: calculate PMI for artist pairs
+        this.calculatePMI(playlists);
+
+        // Third pass: fetch top tracks popularity for each artist
+        await this.fetchArtistPopularities();
 
         // Calculate artist statistics
         this.calculateArtistStatistics();
@@ -31,57 +87,125 @@ class ArtistGraphConstructor {
         this.filterEdges();
         
         const graphData = this.getGraphData();
-        console.log(`✅ Artist graph built: ${graphData.nodes.length} artists, ${graphData.edges.length} connections`);
+        console.log(`✅ PMI-based artist graph built: ${graphData.nodes.length} artists, ${graphData.edges.length} connections`);
         
         return graphData;
     }
 
     /**
-     * Process a single playlist to extract artist co-occurrences
-     * @param {Object} playlist - Playlist object with tracks
+     * Fetch top tracks popularity for all artists
      */
-    processPlaylist(playlist) {
-        if (!playlist.tracks || !playlist.tracks.items) {
-            return;
-        }
-
-        const tracks = playlist.tracks.items
-            .filter(item => item.track && item.track.id) // Filter out null tracks
-            .map(item => item.track);
-
-        // Extract unique artists from this playlist
-        const playlistArtists = new Set();
-        tracks.forEach(track => {
-            track.artists.forEach(artist => {
-                playlistArtists.add(artist.id);
-                this.addArtist(artist, track);
+    async fetchArtistPopularities() {
+        console.log('📊 Fetching artist top tracks popularity...');
+        const artistIds = Array.from(this.nodes.keys());
+        
+        // Process artists in batches to avoid rate limiting
+        const batchSize = 5;
+        for (let i = 0; i < artistIds.length; i += batchSize) {
+            const batch = artistIds.slice(i, i + batchSize);
+            
+            // Fetch popularity for batch
+            const promises = batch.map(async (artistId) => {
+                const popularity = await this.getArtistTopTracksPopularity(artistId);
+                const artist = this.nodes.get(artistId);
+                if (artist) {
+                    artist.topTracksPopularity = popularity;
+                }
             });
-        });
-
-        // Create co-occurrence pairs between artists in this playlist
-        const artistArray = Array.from(playlistArtists);
-        for (let i = 0; i < artistArray.length; i++) {
-            for (let j = i + 1; j < artistArray.length; j++) {
-                this.addCoOccurrence(artistArray[i], artistArray[j], playlist);
+            
+            await Promise.all(promises);
+            
+            // Rate limiting delay
+            if (i + batchSize < artistIds.length) {
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
         }
+        
+        console.log('✅ Finished fetching artist popularities');
     }
 
     /**
-     * Add or update co-occurrence between two artists
+     * Collect artist statistics and playlist appearances
+     * @param {Array} playlists - Array of playlist objects
+     */
+    collectArtistStatistics(playlists) {
+        playlists.forEach(playlist => {
+            if (!playlist.tracks || !playlist.tracks.items) {
+                return;
+            }
+
+            const tracks = playlist.tracks.items
+                .filter(item => item.track && item.track.id)
+                .map(item => item.track);
+
+            // Get unique artists in this playlist
+            const playlistArtists = new Set();
+            tracks.forEach(track => {
+                track.artists.forEach(artist => {
+                    playlistArtists.add(artist.id);
+                    this.addArtist(artist, track);
+                });
+            });
+
+            // Count playlist appearances for each artist
+            playlistArtists.forEach(artistId => {
+                this.artistPlaylistCount.set(artistId, 
+                    (this.artistPlaylistCount.get(artistId) || 0) + 1);
+            });
+        });
+    }
+
+    /**
+     * Calculate PMI for all artist pairs
+     * @param {Array} playlists - Array of playlist objects
+     */
+    calculatePMI(playlists) {
+        playlists.forEach(playlist => {
+            if (!playlist.tracks || !playlist.tracks.items) {
+                return;
+            }
+
+            const tracks = playlist.tracks.items
+                .filter(item => item.track && item.track.id)
+                .map(item => item.track);
+
+            // Get unique artists in this playlist
+            const playlistArtists = new Set();
+            tracks.forEach(track => {
+                track.artists.forEach(artist => {
+                    playlistArtists.add(artist.id);
+                });
+            });
+
+            // Calculate PMI for all pairs in this playlist
+            const artistArray = Array.from(playlistArtists);
+            for (let i = 0; i < artistArray.length; i++) {
+                for (let j = i + 1; j < artistArray.length; j++) {
+                    this.calculatePairPMI(artistArray[i], artistArray[j], playlist);
+                }
+            }
+        });
+    }
+
+    /**
+     * Calculate PMI for a specific artist pair
      * @param {string} artist1Id - First artist ID
      * @param {string} artist2Id - Second artist ID
      * @param {Object} playlist - Playlist where they co-occur
      */
-    addCoOccurrence(artist1Id, artist2Id, playlist) {
+    calculatePairPMI(artist1Id, artist2Id, playlist) {
         // Ensure consistent ordering for edge key
         const [id1, id2] = [artist1Id, artist2Id].sort();
         const edgeKey = `${id1}-${id2}`;
 
-        // Update edge weight
+        // Get individual probabilities
+        const p1 = this.artistPlaylistCount.get(id1) / this.totalPlaylists;
+        const p2 = this.artistPlaylistCount.get(id2) / this.totalPlaylists;
+
+        // Update joint probability (co-occurrence count)
         if (this.edges.has(edgeKey)) {
             const edge = this.edges.get(edgeKey);
-            edge.weight += 1;
+            edge.jointCount += 1;
             edge.playlists.push({
                 id: playlist.id,
                 name: playlist.name,
@@ -91,7 +215,9 @@ class ArtistGraphConstructor {
             this.edges.set(edgeKey, {
                 source: id1,
                 target: id2,
-                weight: 1,
+                jointCount: 1,
+                p1: p1,
+                p2: p2,
                 playlists: [{
                     id: playlist.id,
                     name: playlist.name,
@@ -130,6 +256,8 @@ class ArtistGraphConstructor {
             trackCount: 1,
             totalPopularity: track.popularity || 0,
             releaseYears: new Set([releaseYear]),
+            // Top tracks popularity (will be fetched later)
+            topTracksPopularity: null,
             // Visual properties (will be calculated later)
             size: 0,
             color: ''
@@ -152,38 +280,64 @@ class ArtistGraphConstructor {
     }
 
     /**
-     * Calculate statistics for each artist
+     * Calculate PMI values for all edges and filter
      */
     calculateArtistStatistics() {
+        // Calculate PMI for all edges
+        this.edges.forEach((edge, edgeKey) => {
+            const jointProb = edge.jointCount / this.totalPlaylists;
+            const expectedProb = edge.p1 * edge.p2;
+            
+            // Calculate PMI: log(P(A,B) / (P(A) * P(B)))
+            const pmi = Math.log(jointProb / expectedProb);
+            
+            // Only keep positive PMI values (indicating positive association)
+            if (pmi > 0) {
+                edge.weight = pmi;
+                edge.jointProb = jointProb;
+                edge.expectedProb = expectedProb;
+            } else {
+                // Remove edges with negative PMI
+                this.edges.delete(edgeKey);
+            }
+        });
+
+        // Calculate node properties
         this.nodes.forEach((artist, artistId) => {
-            // Calculate average popularity
-            const avgPopularity = artist.totalPopularity / artist.trackCount;
+            // Use top tracks popularity if available, otherwise fallback to playlist average
+            const popularity = artist.topTracksPopularity !== null ? 
+                artist.topTracksPopularity : 
+                (artist.totalPopularity / artist.trackCount);
             
             // Calculate dominant release era
             const releaseYears = Array.from(artist.releaseYears);
             const avgReleaseYear = releaseYears.reduce((sum, year) => sum + year, 0) / releaseYears.length;
             
             // Update artist with calculated properties
-            artist.avgPopularity = Math.round(avgPopularity);
+            artist.avgPopularity = Math.round(popularity);
             artist.avgReleaseYear = Math.round(avgReleaseYear);
+            artist.playlistCount = this.artistPlaylistCount.get(artistId) || 0;
             
             // Calculate visual properties
-            artist.size = this.calculateArtistSize(artist.trackCount, avgPopularity);
+            artist.size = this.calculateArtistSize(artist.trackCount, popularity, artist.playlistCount);
             artist.color = this.calculateArtistColor(avgReleaseYear);
         });
     }
 
     /**
-     * Calculate artist node size based on track count and popularity
+     * Calculate artist node size based on top tracks popularity
      * @param {number} trackCount - Number of tracks by this artist
-     * @param {number} avgPopularity - Average popularity of tracks
+     * @param {number} topTracksPopularity - Average popularity of top tracks (0-100)
+     * @param {number} playlistCount - Number of playlists this artist appears in
      * @returns {number} Node size for visualization
      */
-    calculateArtistSize(trackCount, avgPopularity) {
-        // Combine track count and popularity for size
-        const trackScore = Math.log(trackCount + 1) * 5;
-        const popularityScore = avgPopularity * 0.3;
-        const totalScore = trackScore + popularityScore;
+    calculateArtistSize(trackCount, topTracksPopularity, playlistCount) {
+        // Size is primarily based on top tracks popularity (0-100)
+        const popularityScore = topTracksPopularity * 0.6; // 60% weight
+        const playlistScore = Math.log(playlistCount + 1) * 2; // 20% weight
+        const trackScore = Math.log(trackCount + 1) * 1; // 20% weight
+        
+        const totalScore = popularityScore + playlistScore + trackScore;
         
         return Math.max(15, Math.min(80, totalScore));
     }
@@ -198,58 +352,43 @@ class ArtistGraphConstructor {
         const age = currentYear - avgReleaseYear;
         
         // Color gradient: newer = blue, older = red
-        const normalizedAge = Math.min(age / 50, 1); // Normalize to 0-1 for 50 years
-        
-        // Blue to red gradient
-        const r = Math.round(255 * normalizedAge);
-        const g = Math.round(100);
-        const b = Math.round(255 * (1 - normalizedAge));
-        
-        return `rgb(${r}, ${g}, ${b})`;
+        const normalizedAge = Math.min(age / 50, 1);
+        return `rgb(${Math.round(255 * normalizedAge)}, 100, ${Math.round(255 * (1 - normalizedAge))})`;
     }
 
     /**
-     * Filter edges based on minimum weight threshold
+     * Filter edges based on minimum PMI threshold
      */
     filterEdges() {
         const filteredEdges = new Map();
         
-        for (const [key, edge] of this.edges) {
+        this.edges.forEach((edge, edgeKey) => {
             if (edge.weight >= this.minEdgeWeight) {
-                filteredEdges.set(key, edge);
+                filteredEdges.set(edgeKey, edge);
             }
-        }
+        });
         
         this.edges = filteredEdges;
-        console.log(`🔍 Filtered edges: ${filteredEdges.size} connections with weight >= ${this.minEdgeWeight}`);
+        console.log(`Filtered edges: ${this.edges.size} edges with PMI >= ${this.minEdgeWeight}`);
     }
 
     /**
-     * Get the final graph data in Cytoscape.js format
+     * Get the final graph data for visualization
      * @returns {Object} Graph data with nodes and edges
      */
     getGraphData() {
-        const nodes = Array.from(this.nodes.values()).map(artist => ({
+        const nodes = Array.from(this.nodes.values()).map(node => ({
             data: {
-                id: artist.id,
-                name: artist.name,
-                spotifyUrl: artist.spotifyUrl,
-                trackCount: artist.trackCount,
-                avgPopularity: artist.avgPopularity,
-                avgReleaseYear: artist.avgReleaseYear,
-                size: artist.size,
-                color: artist.color
+                ...node,
+                releaseYears: Array.from(node.releaseYears)
             }
         }));
 
         const edges = Array.from(this.edges.values()).map(edge => ({
             data: {
+                ...edge,
                 id: `${edge.source}-${edge.target}`,
-                source: edge.source,
-                target: edge.target,
-                weight: edge.weight,
-                thickness: this.calculateEdgeThickness(edge.weight),
-                playlists: edge.playlists.length
+                thickness: this.calculateEdgeThickness(edge.weight)
             }
         }));
 
@@ -257,91 +396,75 @@ class ArtistGraphConstructor {
     }
 
     /**
-     * Calculate edge thickness based on weight
-     * @param {number} weight - Edge weight (co-occurrence count)
+     * Calculate edge thickness based on PMI weight
+     * @param {number} weight - PMI weight value
      * @returns {number} Edge thickness for visualization
      */
     calculateEdgeThickness(weight) {
-        // Map weight to thickness (1-15)
-        return Math.max(1, Math.min(15, Math.log(weight + 1) * 3));
+        // PMI values are typically small, so scale appropriately
+        return Math.max(1, Math.min(15, weight * 5));
     }
 
     /**
      * Get graph statistics
-     * @returns {Object} Statistics about the artist graph
+     * @returns {Object} Statistics about the graph
      */
     getGraphStats() {
-        const nodes = Array.from(this.nodes.values());
-        const edges = Array.from(this.edges.values());
+        const artists = this.nodes.size;
+        const connections = this.edges.size;
         
-        const popularityStats = {
-            min: Math.min(...nodes.map(n => n.avgPopularity)),
-            max: Math.max(...nodes.map(n => n.avgPopularity)),
-            avg: nodes.reduce((sum, n) => sum + n.avgPopularity, 0) / nodes.length
-        };
-
-        const yearStats = {
-            min: Math.min(...nodes.map(n => n.avgReleaseYear)),
-            max: Math.max(...nodes.map(n => n.avgReleaseYear)),
-            avg: nodes.reduce((sum, n) => sum + n.avgReleaseYear, 0) / nodes.length
-        };
-
-        const weightStats = {
-            min: Math.min(...edges.map(e => e.weight)),
-            max: Math.max(...edges.map(e => e.weight)),
-            avg: edges.reduce((sum, e) => sum + e.weight, 0) / edges.length
-        };
-
+        const popularities = Array.from(this.nodes.values()).map(n => n.avgPopularity);
+        const releaseYears = Array.from(this.nodes.values()).map(n => n.avgReleaseYear);
+        const connectionWeights = Array.from(this.edges.values()).map(e => e.weight);
+        
         return {
-            artists: nodes.length,
-            connections: edges.length,
-            popularity: popularityStats,
-            releaseYears: yearStats,
-            connectionWeights: weightStats
+            artists,
+            connections,
+            popularity: {
+                avg: popularities.reduce((a, b) => a + b, 0) / popularities.length,
+                min: Math.min(...popularities),
+                max: Math.max(...popularities)
+            },
+            releaseYears: {
+                avg: releaseYears.reduce((a, b) => a + b, 0) / releaseYears.length,
+                min: Math.min(...releaseYears),
+                max: Math.max(...releaseYears)
+            },
+            connectionWeights: {
+                avg: connectionWeights.reduce((a, b) => a + b, 0) / connectionWeights.length,
+                min: Math.min(...connectionWeights),
+                max: Math.max(...connectionWeights)
+            }
         };
     }
 
     /**
-     * Export graph data to JSON file
+     * Export graph to JSON file
      * @param {string} filename - Output filename
      */
-    exportToJSON(filename = 'artist-graph.json') {
+    exportToJSON(filename = 'artist-graph-pmi.json') {
+        const fs = require('fs');
         const graphData = this.getGraphData();
         const stats = this.getGraphStats();
         
         const exportData = {
             metadata: {
                 generatedAt: new Date().toISOString(),
+                method: 'PMI (Pointwise Mutual Information)',
+                popularitySource: 'Artist Top Tracks',
                 minEdgeWeight: this.minEdgeWeight,
+                totalPlaylists: this.totalPlaylists,
                 stats: stats
             },
             graph: graphData
         };
-
-        // In a browser environment, trigger download
-        if (typeof window !== 'undefined') {
-            const dataStr = JSON.stringify(exportData, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            link.click();
-            
-            URL.revokeObjectURL(url);
-        }
-
-        return exportData;
+        
+        fs.writeFileSync(filename, JSON.stringify(exportData, null, 2));
+        console.log(`✅ PMI-based graph exported to ${filename}`);
     }
 }
 
-// Export for Node.js
+// Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = ArtistGraphConstructor;
-}
-
-// Export for browser
-if (typeof window !== 'undefined') {
-    window.ArtistGraphConstructor = ArtistGraphConstructor;
 } 
