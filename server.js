@@ -460,6 +460,25 @@ app.post('/api/upload-map', upload.single('map'), async (req, res) => {
     }
 });
 
+// Copy map endpoint
+app.post('/api/copy-map', async (req, res) => {
+    try {
+        const { sourceMap } = req.body;
+        if (!sourceMap) return res.status(400).json({ error: 'Source map path required' });
+        
+        const fs = require('fs').promises;
+        const path = require('path');
+        
+        const sourcePath = path.join(__dirname, sourceMap);
+        const destPath = path.join(__dirname, 'public', 'artist-map.json');
+        
+        await fs.copyFile(sourcePath, destPath);
+        res.json({ success: true, message: 'Map copied successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

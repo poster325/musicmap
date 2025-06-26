@@ -253,6 +253,7 @@
         <button onclick="resetView()">🏠 Reset</button>
         <input type="file" id="mapUpload" accept="application/json" style="display:none" onchange="uploadMapFile(event)">
         <button onclick="document.getElementById('mapUpload').click()">⬆️ Upload Map JSON</button>
+        <button onclick="generateDefaultMap()">🎯 Generate Default Map</button>
     </div>
 
     <!-- Terminal-like status bar -->
@@ -490,6 +491,44 @@
                 setTimeout(() => location.reload(), 1000);
             } catch (err) {
                 setTerminalStatus('Upload failed: ' + err.message, 'error');
+            }
+        }
+        
+        // Generate default map by copying latest map
+        async function generateDefaultMap() {
+            setTerminalStatus('Checking for available maps...');
+            try {
+                // List available maps
+                const response = await fetch('/api/maps');
+                const data = await response.json();
+                
+                if (data.maps.length === 0) {
+                    setTerminalStatus('No maps found. Please build a map first using the main interface.', 'error');
+                    return;
+                }
+                
+                // Get the latest map
+                const latestMap = data.maps[0]; // Assuming they're sorted by date
+                setTerminalStatus(`Copying ${latestMap.name} to default location...`);
+                
+                // Copy the latest map to artist-map.json
+                const copyResponse = await fetch('/api/copy-map', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ sourceMap: latestMap.path })
+                });
+                
+                if (!copyResponse.ok) {
+                    throw new Error('Failed to copy map');
+                }
+                
+                setTerminalStatus('Default map created! Reloading...');
+                setTimeout(() => location.reload(), 1000);
+                
+            } catch (error) {
+                setTerminalStatus('Failed to generate default map: ' + error.message, 'error');
             }
         }
         
