@@ -189,8 +189,18 @@ app.get('/test-spotify', async (req, res) => {
             playlistsFound: response.data.playlists.total
         });
     } catch (error) {
-        console.error('Spotify API error:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to connect to Spotify API' });
+        console.error('Spotify API error (detailed):', {
+            message: error.message,
+            code: error.code,
+            config: error.config,
+            response: error.response && {
+                status: error.response.status,
+                statusText: error.response.statusText,
+                headers: error.response.headers,
+                data: error.response.data
+            }
+        });
+        res.status(500).json({ error: 'Failed to connect to Spotify API', details: error.response?.data || error.message });
     }
 });
 
